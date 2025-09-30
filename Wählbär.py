@@ -333,7 +333,7 @@ class Unit:
     # returns free slots for blocks
     # accounts for: need for visit day, 1d/2d hike, ...
     # accounts for block requirements (1 slot, 2 slots, ...)
-    def search_slots(self, block_req):
+    def search_slots(self, block_req={}):
         slots = []
         free_slots = self.schedule.free_slots()
         if free_slots:
@@ -362,13 +362,14 @@ class Unit:
             rank_min = prios[0]["rank"]
             highest_prios = [prios[0]]
             for p in prios:
-                # if self.check_possibility(self.allocation.get_block_by_name(p["name"])):
                 if p["rank"] == rank_min:
                     highest_prios.append(p)
                     continue
-                if len(highest_prios) < N:
+                if N and len(highest_prios) < N: # if not N: strictly highest prios
                     highest_prios.append(p)
                     rank_min = p["rank"]
+                else:  
+                    break
             return highest_prios
         return []
       
