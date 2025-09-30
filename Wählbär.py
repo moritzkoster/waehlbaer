@@ -276,7 +276,7 @@ class Unit:
     # define how the score is calculated 
     # TODO: Is this the Way???
     def score(self):
-        return self.score_sum_norm()
+        return self.score_top_N_norm()
     
     def score_sum_prios(self):  
         score = 0     
@@ -309,6 +309,18 @@ class Unit:
         for prio in self.prios:
             sum_ += self.has_block(prio) * (NRANKS - prio["rank"])
         return sum_ / self.norm_const
+
+    def score_top_N_norm(self, N=11):
+        sorter = lambda d: d["rank"] - 0.1 * self.has_block(d)
+        sorted_prios = sorted(self.prios, key=sorter)
+        norm_const = 0
+        total = 0
+        for ip, prio in enumerate(sorted_prios):
+            if ip < N:
+                norm_const += (NRANKS - prio["rank"])
+            total += self.has_block(prio) * (NRANKS - prio["rank"])
+        return total / norm_const
+
     
     def has_block(self, block):
         blockname = str_from_block(block)
