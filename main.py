@@ -2,7 +2,7 @@ from Wählbär import Allocation, Schedule
 import multiprocessing as mp
 import time
 
-from Utils import print_schedule
+from Utils import print_schedule, write_to_xlsx
 
 NUM_PROCESSES = 8
 
@@ -83,8 +83,9 @@ def mp_worker(seed):
     stime = time.time()
     allocation.evaluate(allocate_units)
     run_eval = time.time() - stime
-    print("FINISCHED")
     allocation.log_stats("log.txt", run_eval)
+    write_to_xlsx(allocation)
+
     return allocation.stats()[0].sum()
 
 seeds = range(1)
@@ -93,5 +94,4 @@ with mp.Pool(processes=NUM_PROCESSES) as pool:
         # Map the function to the seeds
         results = pool.map(mp_worker, seeds)
 
-print(results)
 
