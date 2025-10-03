@@ -1,7 +1,7 @@
 from Wählbär import Schedule, Block, Unit, Allocation, SLOTS_PER_DAY, DAYS
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-# import numpy as np
+import os
 import xlsxwriter as xls
  
 def plot_block(ax, slot, block):
@@ -46,8 +46,8 @@ def slot_to_xlsx_cell(slot):
     return f"{chr(day+1+65) + str(time+1 +2)}"
 
 
-def write_to_xlsx(allocation, fname="allocation.xlsx"):
-    workbook = xls.Workbook(fname)
+def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
+    workbook = xls.Workbook(os.path.join(path,fname))
 
     merge_format = workbook.add_format(
     {
@@ -81,11 +81,11 @@ def write_to_xlsx(allocation, fname="allocation.xlsx"):
     for idd in range(DAYS):
         for itt in range(SLOTS_PER_DAY):
             cell = chr(idd + 1+65) + str(itt +3)
-            string = "=CONCAT(CONCAT("
+            string = "=CONCATENATE(CONCATENATE("
             for ib, block in enumerate(allocation.BLOCKS):
-                string += f'IF(${block.name}.{cell} ="",CONCAT(${block.name}.B1, CHAR(10)),""),'
+                string += f'IF(${block.name}.{cell} ="";CONCATENATE(${block.name}.B1; CHAR(10));"");'
                 if ib == 63:
-                    string = string[:-1] + "), CONCAT("
+                    string = string[:-1] + "); CONCATENATE("
             
             string = string[:-1]+"))"
             worksheet.write(cell, string)   

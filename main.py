@@ -84,7 +84,7 @@ def mp_worker(seed):
     allocation.evaluate(allocate_units)
     run_eval = time.time() - stime
     allocation.log_stats("log.txt", run_eval)
-    write_to_xlsx(allocation)
+    write_to_xlsx(allocation, fname="alc1.xlsx")
 
     return allocation.stats()[0].sum()
 
