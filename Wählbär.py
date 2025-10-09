@@ -90,23 +90,23 @@ class Schedule:
             print("ERROR: bro what?? remove what?"); return 0
     
         if entry and slot:
-            if entry in self.schedule[slot]:
-                self.schedule[slot].remove()
+            if entry in self[slot]:
+                self[slot].remove(entry)
                 return 0
         
         if entry:
             for idd, day in enumerate(self.schedule.calendar):
                 for itt, time in enumerate(day):
                     if entry in time:
-                        self.schedule[(idd, itt)].remove(entry)
+                        self[(idd, itt)].remove(entry)
                         return 0
             print(f"ERROR: couldnt find entry with name {entry.name} in schedule"); return 0
         
         if slot:
-            if len(self.schedule[slot]) == 1:
-                self.schedule[slot].clear()
+            if len(self[slot]) == 1:
+                self[slot].clear()
                 return 0
-            if len(self.schedule[slot]) == 0:
+            if len(self[slot]) == 0:
                 print("ERROR: slot already empty"); return 0
             print(f"ERROR: more than one block in slot. Be more specific"); return 0
 
@@ -239,30 +239,30 @@ class Unit:
     def remove_block(self, block=None, slot=None):
         self.schedule.remove_block(block, slot)
     
-    def remove_block(self, entry=None, slot=None):
-        if type(entry) != Block and type(entry) :
-                print(f"ERROR: entry type ({type(entry)}) is wrong, expected 'Block()' or 'Unit()'"); return 0
-        if entry and slot:
-            if entry in self.schedule[slot]:
-                self.schedule[slot].remove()
-                return 0
-        if entry:
-            for idd, day in enumerate(self.schedule.calendar):
-                for itt, time in enumerate(day):
-                    if entry in time:
-                        self.schedule[(idd, itt)].remove(entry)
-                        return 0
-            print(f"ERROR: couldnt find entry with name {entry.name} in schedule"); return 0
+    # def remove_block(self, entry=None, slot=None):
+    #     if entry and type(entry) != Block :
+    #             print(f"ERROR: entry type ({type(entry)}) is wrong, expected 'Block()' or 'Unit()'"); return 0
+    #     if entry and slot:
+    #         if entry in self.schedule[slot]:
+    #             self.schedule[slot].remove()
+    #             return 0
+    #     if entry:
+    #         for idd, day in enumerate(self.schedule.calendar):
+    #             for itt, time in enumerate(day):
+    #                 if entry in time:
+    #                     self.schedule[(idd, itt)].remove(entry)
+    #                     return 0
+    #         print(f"ERROR: couldnt find entry with name {entry.name} in schedule"); return 0
         
-        if slot:
-            if len(self.schedule[slot]) == 1:
-                self.schedule[slot].clear()
-                return 0
-            if len(self.schedule[slot]) == 0:
-                print("ERROR: slot already empty"); return 0
-            print(f"ERROR: more than one block in slot. Be more specific"); return 0
+    #     if slot:
+    #         if len(self.schedule[slot]) == 1:
+    #             self.schedule[slot].clear()
+    #             return 0
+    #         if len(self.schedule[slot]) == 0:
+    #             print("ERROR: slot already empty"); return 0
+    #         print(f"ERROR: more than one block in slot. Be more specific"); return 0
         
-        print("ERROR: bro what?? remove what?"); return 0
+    #     print("ERROR: bro what?? remove what?"); return 0
     
     def rank(self, block):
         blockname = str_from_block(block)
@@ -475,6 +475,14 @@ class Allocation:
         if type(unit) != Unit: print(f"ERROR: type is not block but '{type(unit)}'"); return 0
         self.UNITS.append(unit)
         unit.allocation = self
+    
+    def search_blocks(self, slot, requirements={}):
+        open_blocks = []
+        for block in self.BLOCKS:
+            if slot in block.search_slots(requirements):
+                open_blocks.append(block)
+        return open_blocks
+
 
     def load_blocklist(ipt):
         # TODO: load bocklist
