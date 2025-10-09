@@ -95,7 +95,7 @@ class Schedule:
                 return 0
         
         if entry:
-            for idd, day in enumerate(self.schedule.calendar):
+            for idd, day in enumerate(self.calendar):
                 for itt, time in enumerate(day):
                     if entry in time:
                         self[(idd, itt)].remove(entry)
@@ -155,25 +155,83 @@ def no_two_water_activities(slot, self, block_req):
     for idd, day in enumerate(self.schedule.calendar):
         for iss, time in enumerate(day):
             for block in time:
-                if hasattr(block, "cath") and block.cath == "water_activity":
+                if hasattr(block, "cath") and block.cath == "wasser":
                     return False
     return True 
 
+def no_two_water_in_same_week(slot, self, block_req):
+    if block_req["cath"] != "wasser": return True
+
+    if Schedule.to_idx(slot)[0] < 7:
+        test_days = range(0, 7)
+    else:
+        test_days = range(7, 14)
+    for idd in test_days:
+        day = self.schedule.calendar[idd]
+        for iss, time in enumerate(day):
+            for block in time:
+                if block.requirements["cath"] == "wasser":
+                    return False 
+        return True   
+    
+def no_two_workshops_in_same_week(slot, self, block_req):
+    if block_req["cath"] != "workshop": return True
+
+    if Schedule.to_idx(slot)[0] < 7:
+        test_days = range(0, 7)
+    else:
+        test_days = range(7, 14)
+    for idd in test_days:
+        day = self.schedule.calendar[idd]
+        for iss, time in enumerate(day):
+            for block in time:
+                if block.requirements["cath"] == "workshop":
+                    return False 
+        return True 
+
 UNIT_RULES = [
     soft_assign_musthave_blocks,
-    no_two_on_same_day,
-    no_two_water_activities
+    no_two_on_same_day#,
+    # no_two_water_in_same_week,
+    # no_two_workshops_in_same_week
 ]
+def has_space(slot, self, unit_req):
+    return unit_req["space"] <= self.get_space(slot)
 
+def is_for_group(slot, self, unit_req):
+    return unit_req["group"] in self.requirements["group"]
+
+# also tests for group
+def has_space_for_group(slot, self, unit_req):
+    if unit_req["group"] in self.requirements["group"]:
+        space, groups = self.get_group_space(slot)
+        return unit_req["space"] <= space and unit_req["group"] in groups
+    return False
+
+def on_times_block(slot, self, unit_req):
+    return False if "on_times"    in self.requirements and Schedule.to_idx(slot)[1] not in self.requirements["on_times"] else True
+
+def on_days_block(slot, self, unit_req):
+    return False if "on_days"     in self.requirements and Schedule.to_idx(slot)[0] not in self.requirements["on_days"]  else True
+
+def not_in_slot_block(slot, self, unit_req):
+    return False if "not_in_slot" in self.requirements and slot in self.requirements["not_in_slot"] else True
+
+def on_days_unit(slot, self, unit_req):
+    return False if "on_days"  in unit_req and Schedule.to_idx(slot)[0] not in unit_req["on_days"]  else True
+
+def on_times_unit(slot, self, unit_req):
+    return False if "on_times" in unit_req and Schedule.to_idx(slot)[1] not in unit_req["on_times"] else True
 
 BLOCK_RULES = [
-    lambda slot, self, unit_req : self.get_space(slot) >= unit_req["space"],
-    lambda slot, self, unit_req : False if "on_days"     in self.requirements and Schedule.to_idx(slot)[0] not in self.requirements["on_days"]  else True,
-    lambda slot, self, unit_req : False if "on_times"    in self.requirements and Schedule.to_idx(slot)[1] not in self.requirements["on_times"] else True,
-    lambda slot, self, unit_req : False if "not_in_slot" in self.requirements and slot in self.requirements["not_in_slot"] else True,
-
-    lambda slot, self, unit_req : False if "on_days"  in unit_req and Schedule.to_idx(slot)[0] not in unit_req["on_days"]  else True,
-    lambda slot, self, unit_req : False if "on_times" in unit_req and Schedule.to_idx(slot)[1] not in unit_req["on_times"] else True,
+    # has_space,
+    # is_for_group,
+    has_space_for_group,
+    on_days_block,
+    on_times_block,
+    not_in_slot_block,
+    on_days_unit,
+    on_times_unit,
 ]
 
 class Block:
@@ -189,6 +247,22 @@ class Block:
         for unit in self.schedule[slot]:
             taken += unit.nPeople
         return self.requirements["space"] - taken
+
+    def get_group_space(self, slot):
+        if not self.schedule[slot]: 
+            return self.requirements["space"], ["wo", "pf", "pi"]
+        if "mix_groups" in self.requirements and self.requirements["mix_groups"]: 
+            return self.get_space(slot), ["wo", "pf", "pi"]
+        
+        taken=0
+        group = self.schedule[slot][0].requirements["group"]
+        for unit in self.schedule[slot]:
+            taken += unit.nPeople
+            if unit.requirements["group"] != group:
+                print(f"ERROR: two different groups assigned to block {self.name}")
+                print(self.schedule[slot]); exit()
+        return self.requirements["space"] - taken, [group]
+        
     
     def set_unit(self, unit, slot):
         self.schedule.set_unit(unit, slot)  
@@ -225,10 +299,11 @@ class Block:
         return d
 
 class Unit: 
-    def __init__(self, name, nPeople, prios):
+    def __init__(self, name, nPeople, requirements, prios):
         self.name = name
         self.nPeople = nPeople
         self.prios = sorted(prios, key=lambda d: d['rank'])
+        self.requirements = requirements
         
         self.schedule = Schedule(self)
         self.rules = UNIT_RULES
@@ -239,30 +314,6 @@ class Unit:
     def remove_block(self, block=None, slot=None):
         self.schedule.remove_block(block, slot)
     
-    # def remove_block(self, entry=None, slot=None):
-    #     if entry and type(entry) != Block :
-    #             print(f"ERROR: entry type ({type(entry)}) is wrong, expected 'Block()' or 'Unit()'"); return 0
-    #     if entry and slot:
-    #         if entry in self.schedule[slot]:
-    #             self.schedule[slot].remove()
-    #             return 0
-    #     if entry:
-    #         for idd, day in enumerate(self.schedule.calendar):
-    #             for itt, time in enumerate(day):
-    #                 if entry in time:
-    #                     self.schedule[(idd, itt)].remove(entry)
-    #                     return 0
-    #         print(f"ERROR: couldnt find entry with name {entry.name} in schedule"); return 0
-        
-    #     if slot:
-    #         if len(self.schedule[slot]) == 1:
-    #             self.schedule[slot].clear()
-    #             return 0
-    #         if len(self.schedule[slot]) == 0:
-    #             print("ERROR: slot already empty"); return 0
-    #         print(f"ERROR: more than one block in slot. Be more specific"); return 0
-        
-    #     print("ERROR: bro what?? remove what?"); return 0
     
     def rank(self, block):
         blockname = str_from_block(block)
@@ -507,9 +558,14 @@ class Allocation:
                     "block"+str(i+1),
                     {   
                         "space": 24* random.randint(1, 2),
+                        "js_type": random.choice(["LS", "LA", "LP"]),
+                        "cath": random.choice(["wasser", "workshop", "none", "none", "none", "none", "none", "none", "none", "none"]),
+                        "group": ["wo", "pf", "pi"],
+                        # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
                         "length": length,
                         # "on_days": [0, 1, 2, 3, 4, 5, 6],
                         "on_times": on_times
+                        
                     }
                 )
             )
@@ -522,6 +578,12 @@ class Allocation:
                 Unit(
                     "unit"+str(i+1),
                     random.randint(12,24),
+                    requirements={
+                        "group": random.choice(["wo", "pf", "pi"]),
+                        "hike": random.randint(0, 2),
+                        "total_blocks": random.randint(7,11),
+                        "free_slots": random.choice(["A1", "B2", "C3", ])
+                    },
                     prios=[{"name": "block"+str(ii+1), "rank": min(5, random.randint(1, 20))} for ii in range(N_Blocks)]
                 )
             )
