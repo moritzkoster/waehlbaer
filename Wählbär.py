@@ -1,10 +1,11 @@
 import numpy as np
-# import pandas as pd
+import pandas as pd
 import json
 import random
 import os
+from textwrap import dedent
 
-SLOTS_PER_DAY = 4
+SLOTS_PER_DAY = 5
 DAYS = 14
 
 NRANKS = 5
@@ -25,19 +26,19 @@ class Schedule:
         # day, slot = self.ipt_to_idx(ipt)
         return self[ipt]
 
-    def get_list(self, with_slot=False, names_only=False):
+    def get_list(self, with_slot=False, id_only=False):
         l = []
         for idd, day in enumerate(self.calendar):
             for it, time in enumerate(day):
                 for entry in time:
                     if with_slot:
-                        if names_only:
-                            l.append({"slot": self.idx2str(idd, it), "name": entry.name})
+                        if id_only:
+                            l.append({"slot": self.idx2str(idd, it), "ID": entry.ID})
                         else:
                             l.append({"slot": self.idx2str(idd, it), "element": entry})
                     else:
-                        if names_only:
-                            l.append(entry.name)
+                        if id_only:
+                            l.append(entry.ID)
                         else:
                             l.append(entry)
         return l
@@ -100,7 +101,7 @@ class Schedule:
                     if entry in time:
                         self[(idd, itt)].remove(entry)
                         return 0
-            print(f"ERROR: couldnt find entry with name {entry.name} in schedule"); return 0
+            print(f"ERROR: couldnt find entry with ID {entry.ID}  in schedule"); return 0
         
         if slot:
             if len(self[slot]) == 1:
@@ -170,7 +171,7 @@ def no_two_water_in_same_week(slot, self, block_req):
         day = self.schedule.calendar[idd]
         for iss, time in enumerate(day):
             for block in time:
-                if block.requirements["cath"] == "wasser":
+                if block.data["cath"] == "wasser":
                     return False 
         return True   
     
@@ -185,7 +186,7 @@ def no_two_workshops_in_same_week(slot, self, block_req):
         day = self.schedule.calendar[idd]
         for iss, time in enumerate(day):
             for block in time:
-                if block.requirements["cath"] == "workshop":
+                if block.data["cath"] == "workshop":
                     return False 
         return True 
 
@@ -199,23 +200,23 @@ def has_space(slot, self, unit_req):
     return unit_req["space"] <= self.get_space(slot)
 
 def is_for_group(slot, self, unit_req):
-    return unit_req["group"] in self.requirements["group"]
+    return unit_req["group"] in self.data["group"]
 
 # also tests for group
 def has_space_for_group(slot, self, unit_req):
-    if unit_req["group"] in self.requirements["group"]:
+    if unit_req["group"] in self.data["group"]:
         space, groups = self.get_group_space(slot)
         return unit_req["space"] <= space and unit_req["group"] in groups
     return False
 
 def on_times_block(slot, self, unit_req):
-    return False if "on_times"    in self.requirements and Schedule.to_idx(slot)[1] not in self.requirements["on_times"] else True
+    return False if "on_times"    in self.data and Schedule.to_idx(slot)[1] not in self.data["on_times"] else True
 
 def on_days_block(slot, self, unit_req):
-    return False if "on_days"     in self.requirements and Schedule.to_idx(slot)[0] not in self.requirements["on_days"]  else True
+    return False if "on_days"     in self.data and Schedule.to_idx(slot)[0] not in self.data["on_days"]  else True
 
 def not_in_slot_block(slot, self, unit_req):
-    return False if "not_in_slot" in self.requirements and slot in self.requirements["not_in_slot"] else True
+    return False if "not_in_slot" in self.data and slot in self.data["not_in_slot"] else True
 
 def on_days_unit(slot, self, unit_req):
     return False if "on_days"  in unit_req and Schedule.to_idx(slot)[0] not in unit_req["on_days"]  else True
@@ -235,9 +236,9 @@ BLOCK_RULES = [
 ]
 
 class Block:
-    def __init__(self, name, requirements):
-        self.name = name
-        self.requirements = requirements
+    def __init__(self, ID, data):
+        self.ID = ID
+        self.data = data
         self.schedule = Schedule(self)
 
         self.rules = BLOCK_RULES
@@ -245,23 +246,23 @@ class Block:
     def get_space(self, slot):
         taken = 0
         for unit in self.schedule[slot]:
-            taken += unit.nPeople
-        return self.requirements["space"] - taken
+            taken += unit.n_people
+        return self.data["space"] - taken
 
     def get_group_space(self, slot):
         if not self.schedule[slot]: 
-            return self.requirements["space"], ["wo", "pf", "pi"]
-        if "mix_groups" in self.requirements and self.requirements["mix_groups"]: 
+            return self.data["space"], ["wo", "pf", "pi"]
+        if "mix_groups" in self.data and self.data["mix_groups"]: 
             return self.get_space(slot), ["wo", "pf", "pi"]
         
         taken=0
-        group = self.schedule[slot][0].requirements["group"]
+        group = self.schedule[slot][0].data["group"]
         for unit in self.schedule[slot]:
-            taken += unit.nPeople
-            if unit.requirements["group"] != group:
-                print(f"ERROR: two different groups assigned to block {self.name}")
+            taken += unit.n_people
+            if unit.data["group"] != group:
+                print(f"ERROR: two different groups assigned to block {self.ID}")
                 print(self.schedule[slot]); exit()
-        return self.requirements["space"] - taken, [group]
+        return self.data["space"] - taken, [group]
         
     
     def set_unit(self, unit, slot):
@@ -289,21 +290,33 @@ class Block:
         return slots
 
     def to_dict(self):
-        unit_list = self.schedule.get_list(with_slot=True, names_only=True)
+        unit_list = self.schedule.get_list(with_slot=True, id_only=True)
         d = {
             "type": "block",
-            "name": self.name,
-            "requirements": self.requirements,
+            "ID": self.ID,
+            "data": self.data,
             "schedule": unit_list
             }
         return d
+    
+    def __repr__(self):
+        data = self.data
+        s = dedent(f"""
+            \033[1m{data["fullname"]}\033[0m
+            {self.ID}: {data["js_type"]} : {data["cath"]} 
+            space: {data["space"]} : on times {data["on_times"]} : duration {data["length"]}
+            for: {data["group"]}"""
+        )
+        return s
+
 
 class Unit: 
-    def __init__(self, name, nPeople, requirements, prios):
-        self.name = name
-        self.nPeople = nPeople
-        self.prios = sorted(prios, key=lambda d: d['rank'])
-        self.requirements = requirements
+    def __init__(self, ID, data):
+        self.ID = ID
+        self.fullname = data["fullname"]
+        self.n_people = data["n_people"]
+        # self.data["prios"] = sorted(data["prios"], key=lambda d: d['rank']) # redo
+        self.data = data
         
         self.schedule = Schedule(self)
         self.rules = UNIT_RULES
@@ -315,11 +328,11 @@ class Unit:
         self.schedule.remove_block(block, slot)
     
     
-    def rank(self, block):
-        blockname = str_from_block(block)
+    def rank(self, block): # TODO
+        id_ = id_from_block(block)
 
-        for prio in self.prios:
-            if blockname == prio["name"]:
+        for prio in self.data["prios"]:
+            if id_ == prio["ID"]:
                 return prio["rank"]
         print("ERROR: block not in Prio")
         return NRANKS
@@ -329,16 +342,16 @@ class Unit:
     def score(self):
         return self.score_top_N_norm()
     
-    def score_sum_prios(self):  
+    def score_sum_prios(self):  # TODO 
         score = 0     
         for block in self.schedule.get_list():
             score += NRANKS - (self.rank(block)) # TODO: is this the way???
         return score
    
-    def score_top_N(self, N, p=False):
+    def score_top_N(self, N, p=False): # TODO
         score = 0
         sorter = lambda d: d["rank"] - 0.1 * self.has_block(d)
-        top_N = sorted(self.prios, key=sorter)[:N]
+        top_N = sorted(self.data["prios"], key=sorter)[:N]
 
         if p:
             for p in top_N:
@@ -350,20 +363,20 @@ class Unit:
                 score += 1 
         return score
 
-    def score_sum_norm(self):
+    def score_sum_norm(self): # TODO
         if not hasattr(self, "norm_const"):
-            self.norm_const = np.array([NRANKS - p["rank"] for p in self.prios]).sum()
+            self.norm_const = np.array([NRANKS - p["rank"] for p in self.data["prios"]]).sum()
             if self.norm_const == 0: 
                 print("WARNING: all prios are 5")
                 return 1
         sum_ = 0
-        for prio in self.prios:
+        for prio in self.data["prios"]:
             sum_ += self.has_block(prio) * (NRANKS - prio["rank"])
         return sum_ / self.norm_const
 
-    def score_top_N_norm(self, N=11):
+    def score_top_N_norm(self, N=11): # TODO
         sorter = lambda d: d["rank"] - 0.1 * self.has_block(d)
-        sorted_prios = sorted(self.prios, key=sorter)
+        sorted_prios = sorted(self.data["prios"], key=sorter)
         norm_const = 0
         total = 0
         for ip, prio in enumerate(sorted_prios):
@@ -374,10 +387,10 @@ class Unit:
 
     
     def has_block(self, block):
-        blockname = str_from_block(block)
+        id_ = id_from_block(block)
 
         for block in self.schedule.get_list():
-            if block.name == blockname:
+            if block.ID == id_:
                 return True
         return False
     
@@ -400,14 +413,14 @@ class Unit:
             return None
 
 
-    def get_unmatched_prios(self):
+    def get_unmatched_prios(self): # TODO
         prios = []
-        for prio in self.prios:
+        for prio in self.data["prios"]:
             if not self.has_block(prio):
                 prios.append(prio)
         return sorted(prios, key=lambda d: d["rank"])
     
-    def highest_unmatched_prios(self, N=5):
+    def highest_unmatched_prios(self, N=5): # TODO
         prios = self.get_unmatched_prios()
         if prios:
             rank_min = prios[0]["rank"]
@@ -427,12 +440,12 @@ class Unit:
 
         
     # Monte Carlo sampling a priority according to the rank
-    def mc_prio(self):
+    def mc_prio(self): # TODO
         blocks = [] 
         block_map = [0]
-        for prio in self.prios:
+        for prio in self.data["prios"]:
             if not self.has_block(prio):
-                blocks.append(prio["name"])
+                blocks.append(prio["ID"])
                 weight = NRANKS - prio["rank"] +1 # change the weight calculation
                 block_map.append(block_map[-1] + weight)
         
@@ -455,7 +468,7 @@ class Unit:
     def check_possibility(self, p, slot):
         possible = False
         for rule in self.rules:
-            block = self.allocation.get_block_by_name(p["name"])
+            block = self.allocation.get_block_by_ID(p["ID"])
             if not rule(self, block, slot):
                 possible = False
         return possible
@@ -486,14 +499,14 @@ class Allocation:
             data = json.load(file)
         for d in data:
             if d["type"] == "block":
-                block = self.get_block_by_name(d["name"])
+                block = self.get_block_by_ID(d["ID"])
                 for entry in d["schedule"]:
-                    block.set_unit(self.get_unit_by_name(entry["name"]), entry["slot"] )
+                    block.set_unit(self.get_unit_by_ID(entry["ID"]), entry["slot"] )
             # should not be necessary
             # if d["type"] == "unit":
-            #     unit = get_unit_by_name(d["name"])
+            #     unit = get_unit_by_ID(d["ID"])
             #     for entry in d["schedule"]:
-            #         unit.set_block(get_unit_by_name(entry["unit"]), entry["slot"] )
+            #         unit.set_block(get_unit_by_ID(entry["unit"]), entry["slot"] )
 
     def clear_schedules(self):
         for block in self.BLOCKS:
@@ -505,15 +518,15 @@ class Allocation:
         self.BLOCKS.clear()
         self.UNITS.clear()
 
-    def get_block_by_name(self, name):
+    def get_block_by_ID(self, ID):
         for block in self.BLOCKS:
-            if block.name == name:
+            if block.ID == ID:
                 return block
         return None
 
-    def get_unit_by_name(self, name):
+    def get_unit_by_ID(self, ID):
         for unit in self.UNITS:
-            if unit.name == name:
+            if unit.ID == ID:
                 return unit
         return None
     
@@ -535,13 +548,95 @@ class Allocation:
         return open_blocks
 
 
-    def load_blocklist(ipt):
-        # TODO: load bocklist
-        pass
+ 
 
-    def load_unitlist(ipt):
-        # TODO: load unit list
-        pass
+    # def load_unitlist(self, path="data", filename="Antworten Buchungstool.xlsx"):
+    #     df = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=1)
+        
+    #     PRIOS = [
+    #         ["Umbedingt", "Das wollen wir unbendingt machen"],
+    #         ["Sehr Gerne", "Das würden wir sehr gerne machen"],
+    #         ["Gerne", "Das würden wir gerne machen"],
+    #         ["Neutral"],
+    #         ["Lieber nicht", "Das wollen wir nicht machen"]
+    #     ]
+    #     for ip, p in enumerate(PRIOS):
+    #         for pp in  p:
+    #             df.replace(pp, str(ip+1), inplace=True)
+        
+    #     for column in df.columns:
+    #         print(f"{column}: \033[1m{df.loc[0, column]}\033[0m")
+
+    # def load_blocklist(self, path="data", filename="PRG_Blockliste.xlsx"):
+    #     df = pd.read_excel(os.path.join(path, filename), sheet_name="On-Site Buchbar")
+    #     df = df[[
+    #         'Block Nr.',
+    #         'Off-Site', 
+    #         'Block- Titel',
+    #         'Ort', 
+    #         'Programmstruktur', 
+    #         'On-Site', 'Off-Site.1',
+    #         'Blockdauer', 
+    #         'Blockart J+S', 
+    #         'Stufe', 
+    #         'Gruppengrösse', 
+    #         'Partizipation',
+    #         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
+    #         'geschätzte Anzahl Durchführungen'
+    #     ]]
+
+    #     df.columns = [
+    #         'ID',
+    #         'typ', 
+    #         'name',
+    #         'ort', 
+    #         'betr_unbetr', 
+    #         'tags_onsite', 'tags_offsite',
+    #         'dauer', 
+    #         'blockart_J_S', 
+    #         'stufen', 
+    #         'gruppengroesse', 
+    #         'mix_units',
+    #         'max_durchführungen',
+    #         'est_durchführungen'
+    #     ]
+    #     df = df.dropna(subset=["ID"])
+
+    #     print(df["stufen"])
+    #     for bd in df.itertuples():
+            
+    #         length = 1
+    #         on_times = [0, 1, 2]
+    #         if bd.dauer == "4h": 
+    #             length = 2
+    #             on_times = [1]
+    #         if bd.dauer == "8h":
+    #             length = 4
+    #             on_times = [0]
+    #         if bd.dauer == "2 Tage":
+    #             length = 7
+    #             on_times = [0]
+            
+    #         self.append_block(
+
+    #             Block(
+    #                 bd.ID,
+    #                 {   "fullname": bd.name,
+    #                     "space": bd.gruppengroesse,
+    #                     "js_type": bd.blockart_J_S,
+    #                     "cath": bd.typ,
+    #                     "group": bd.stufen.split(", ") if type(bd.stufen) == str else bd.stufen,
+    #                     # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
+    #                     "length": length,
+    #                     # "on_days": [0, 1, 2, 3, 4, 5, 6],
+    #                     "on_times": on_times
+                        
+    #                 }
+    #             )
+    #         )
+
+
+
 
     def load_example_blocklist(self, N = 10):
         random.seed(41)
@@ -576,15 +671,16 @@ class Allocation:
         for i in range(N):
             self.append_unit(
                 Unit(
-                    "unit"+str(i+1),
-                    random.randint(12,24),
-                    requirements={
+                    ID="unit"+str(i+1),
+                    data={
+                        "fullname": "Unit " + str(i+1),
+                        "n_people": random.randint(12,24),
                         "group": random.choice(["wo", "pf", "pi"]),
                         "hike": random.randint(0, 2),
                         "total_blocks": random.randint(7,11),
-                        "free_slots": random.choice(["A1", "B2", "C3", ])
-                    },
-                    prios=[{"name": "block"+str(ii+1), "rank": min(5, random.randint(1, 20))} for ii in range(N_Blocks)]
+                        "free_slots": random.choice(["A1", "B2", "C3", ]),
+                        "prios": [{"ID": "block"+str(ii+1), "rank": min(5, random.randint(1, 20))} for ii in range(N_Blocks)]
+                    }
                 )
             )
 
@@ -599,6 +695,10 @@ class Allocation:
             scores[i] = unit.score() 
             blocks[i] = len(unit.schedule.get_list())
         return scores, blocks
+
+    def print_blocklist(self):
+        for b in self.BLOCKS:
+            print(b)
     
     def log_stats(self, path, runtime):
         s, b = self.stats() # scores, blocks assigned
@@ -611,17 +711,17 @@ class Allocation:
             file.write(f"{runtime:5.2f} s\n")
 
 
-def str_from_block(block):
+def id_from_block(block):
 
     if type(block) == dict:
-        blockname = block["name"]
+        id_ = block["ID"]
     elif type(block) == Block:
-        blockname = block.name
+        id_ = block.ID
     elif type(block) == str:
-        blockname = block
+        id_ = block
     else:
-        print("ERROR: Invalid Block type, expected Block(), dict[name] or string")
-    return blockname
+        print("ERROR: Invalid Block type, expected Block(), dict['ID'] or string")
+    return id_
 
 def test_random_seed():
     return random.random()

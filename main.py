@@ -2,7 +2,7 @@ from Wählbär import Allocation, Schedule
 import multiprocessing as mp
 import time
 
-from Utils import print_schedule, write_to_xlsx
+from IO import print_schedule, write_to_xlsx
 
 NUM_PROCESSES = 8
 
@@ -16,7 +16,7 @@ def the_magic_allocation_function(allocation):
                 hp = allocation.random.choice(unit.highest_unmatched_prios(N=6))
                 if not hp:
                     break
-                block = allocation.get_block_by_name(hp["name"])
+                block = allocation.get_block_by_ID(hp["ID"])
                 block_slots = block.search_slots({"space": unit.nPeople})
                 unit_slots = unit.search_slots(block)
                 matching = Schedule.matching_slots(unit_slots, block_slots)
@@ -34,9 +34,9 @@ def more_magic_recursive_allocation_function(allocation):
         unit = allocation.UNITS[unit_idx]
 
         for block_prio in unit.highest_unmatched_prios(4):
-            block = allocation.get_block_by_name(block_prio["name"])
-            block_slots = block.search_slots({"space": unit.nPeople, "group": unit.requirements["group"]})
-            unit_slots = unit.search_slots({"cath": block.requirements["cath"]})
+            block = allocation.get_block_by_ID(block_prio["ID"])
+            block_slots = block.search_slots({"space": unit.n_people, "group": unit.data["group"]})
+            unit_slots = unit.search_slots({"cath": block.data["cath"]})
             matching = Schedule.matching_slots(unit_slots, block_slots)
             if matching:
                 for slot in matching:
@@ -87,6 +87,7 @@ def mp_worker(seed):
     allocation.evaluate(allocate_units)
     run_eval = time.time() - stime
     allocation.log_stats("log.txt", run_eval)
+    allocation.save("a1.json")
     write_to_xlsx(allocation, fname="alc1.xlsx")
 
     return allocation.stats()[0].sum()
