@@ -156,12 +156,12 @@ def no_two_water_activities(slot, self, block_req):
     for idd, day in enumerate(self.schedule.calendar):
         for iss, time in enumerate(day):
             for block in time:
-                if hasattr(block, "cath") and block.cath == "wasser":
+                if hasattr(block, "cat") and block.cat == "wasser":
                     return False
     return True 
 
 def no_two_water_in_same_week(slot, self, block_req):
-    if block_req["cath"] != "wasser": return True
+    if block_req["cat"] != "wasser": return True
 
     if Schedule.to_idx(slot)[0] < 7:
         test_days = range(0, 7)
@@ -171,12 +171,12 @@ def no_two_water_in_same_week(slot, self, block_req):
         day = self.schedule.calendar[idd]
         for iss, time in enumerate(day):
             for block in time:
-                if block.data["cath"] == "wasser":
+                if block.data["cat"] == "wasser":
                     return False 
         return True   
     
 def no_two_workshops_in_same_week(slot, self, block_req):
-    if block_req["cath"] != "workshop": return True
+    if block_req["cat"] != "workshop": return True
 
     if Schedule.to_idx(slot)[0] < 7:
         test_days = range(0, 7)
@@ -186,7 +186,7 @@ def no_two_workshops_in_same_week(slot, self, block_req):
         day = self.schedule.calendar[idd]
         for iss, time in enumerate(day):
             for block in time:
-                if block.data["cath"] == "workshop":
+                if block.data["cat"] == "workshop":
                     return False 
         return True 
 
@@ -302,21 +302,69 @@ class Block:
     def __repr__(self):
         data = self.data
         s = dedent(f"""
-            \033[1m{data["fullname"]}\033[0m
-            {self.ID}: {data["js_type"]} : {data["cath"]} 
-            space: {data["space"]} : on times {data["on_times"]} : duration {data["length"]}
+            \033[1m\033[34m{self.ID}: {data["fullname"]}\033[0m
+            {data["js_type"]}: {data["cat"]} 
+            space: {data["space"]} | duration: {data["length"]}
             for: {data["group"]}"""
         )
         return s
 
+# class MetaBlock(Block):
+#     def __init__(self, ID, data):
+#         super().__init__(ID, data)
+#         self.sub_blocks = []
+
+#     def add_subblock(self, block):
+#         if type(block) != Block:
+#             print(f"ERROR: type is not block but '{type(block)}'"); return 0
+#         self.sub_blocks.append(block)
+    
+#     def search_slots(self, requirements):
+#         slots = {}
+#         for sub_block in self.sub_blocks:
+#             slots[sub_block.ID] = sub_block.search_slots(requirements)
+#         return slots
+
+#     def set_unit(self, unit, slot):
+#         if type(slot) != dict:
+#             print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
+#         for sub_block in self.sub_blocks:
+#             if sub_block.ID == slot["ID"]:
+#                 sub_block.set_unit(unit, slot["slot"])
+#                 return
+#         print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
+    
+#     def remove_unit(self, unit=None, slot=None):
+#         if type(slot) != dict:
+#             print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
+#         for sub_block in self.sub_blocks:
+#             if sub_block.ID == slot["ID"]:
+#                 sub_block.remove_unit(unit, slot["slot"])
+#                 return
+#         print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
+        
+#     def __repr__(self):
+#         s = f"\033[1m\033[34m{self.ID}: {self.data['fullname']}\033[0m"
+#         s += "\n  Sub-Blocks:\n"
+#         for sb in self.sub_blocks:
+#             s += "    - " + sb.ID + ": " + sb.data["fullname"] + "\n"
+#         return s
 
 class Unit: 
     def __init__(self, ID, data):
         self.ID = ID
-        self.fullname = data["fullname"]
-        self.n_people = data["n_people"]
-        # self.data["prios"] = sorted(data["prios"], key=lambda d: d['rank']) # redo
-        self.data = data
+        self.fullname = "FULLNAME"
+        self.n_people = 12
+        
+        self.contact = data["contact"]; del data["contact"]
+        self.email = data["email"]; del data["email"]
+        self.group = data["group"]; del data["group"]
+        self.more_or_less = data["more_or_less"]; del data["more_or_less"]
+        self.wasser_anerk = data["wasser_anerk"]; del data["wasser_anerk"]
+
+        self.prios = data
+        self.prios_sorted = None
+        # self.sort_prios_by_cat() is called while appending the unit
         
         self.schedule = Schedule(self)
         self.rules = UNIT_RULES
@@ -326,7 +374,6 @@ class Unit:
     
     def remove_block(self, block=None, slot=None):
         self.schedule.remove_block(block, slot)
-    
     
     def rank(self, block): # TODO
         id_ = id_from_block(block)
@@ -342,13 +389,13 @@ class Unit:
     def score(self):
         return self.score_top_N_norm()
     
-    def score_sum_prios(self):  # TODO 
+    def score_sum_prios(self): 
         score = 0     
         for block in self.schedule.get_list():
-            score += NRANKS - (self.rank(block)) # TODO: is this the way???
+            score += NRANKS - (self.rank(block)) # is this the way???
         return score
    
-    def score_top_N(self, N, p=False): # TODO
+    def score_top_N(self, N, p=False): 
         score = 0
         sorter = lambda d: d["rank"] - 0.1 * self.has_block(d)
         top_N = sorted(self.data["prios"], key=sorter)[:N]
@@ -412,15 +459,17 @@ class Unit:
         else:
             return None
 
-
-    def get_unmatched_prios(self): # TODO
+    def get_unmatched_prios(self):
         prios = []
-        for prio in self.data["prios"]:
-            if not self.has_block(prio):
-                prios.append(prio)
-        return sorted(prios, key=lambda d: d["rank"])
+        for cat, prio_list in self.prios.items():
+            for prio in prio_list:
+                if not self.has_block(prio):
+                    prio["cat"] = cat 
+                    prios.append(prio)
+        return prios
     
     def highest_unmatched_prios(self, N=5): # TODO
+        print("\033[31m'highest_unmatched_prios()' IS DEPRECATED, USE 'get_highest_unmatched_by_cat()' INSTEAD\033[0m]")
         prios = self.get_unmatched_prios()
         if prios:
             rank_min = prios[0]["rank"]
@@ -436,11 +485,25 @@ class Unit:
                     break
             return highest_prios
         return []
-      
+    
+    # assumes prios are sorted by rank
+    def get_highest_unmatched_by_cat(self, cat): 
+        prios = []
+        for prio in self.prios[cat]:
+            if not self.has_block(prio):
+                return prio
+        return None
+    
+    def get_all_unmatched_by_cat(self, cat):
+        prios = []
+        for prio in self.prios[cat]:
+            if not self.has_block(prio):
+                prios.append(prio)
+        return prios
 
-        
     # Monte Carlo sampling a priority according to the rank
-    def mc_prio(self): # TODO
+    def mc_prio(self): 
+        print("\033[31m'mc_prio()' IS DEPRECATED, NO REPLACEMENT SO FAR\033[0m]")
         blocks = [] 
         block_map = [0]
         for prio in self.data["prios"]:
@@ -456,6 +519,7 @@ class Unit:
     
     # random block if top N unmatched prios
     def sample_top_N_prios(self, N):
+        print("\033[31m'sample_top_N_prios()' IS DEPRECATED, NO REPLACEMENT SO FAR\033[0m]")
         prios = self.get_unmatched_prios()
         if len(prios) >= N:
             return random.choice(prios[:N])
@@ -466,13 +530,57 @@ class Unit:
         self.schedule.set_block(block, slot)
     
     def check_possibility(self, p, slot):
-        possible = False
         for rule in self.rules:
             block = self.allocation.get_block_by_ID(p["ID"])
             if not rule(self, block, slot):
-                possible = False
-        return possible
+                return False
+        return True
+    
+    # TODO sort prios by cat
+    # self.prios = {
+    #   "cat1": [block1_id, block2_id, ...],
+    #   "cat2": [block3_id, block4_id, ...],
+    #   ...
+    # }
 
+    def sort_prios_by_cat(self):
+        if not hasattr(self.allocation, "block_cats"): print("\033[1m\033[31mERR: call 'find_block_cats()' first\033[0m")
+        prios = {}
+        general = []
+        for ID, value in self.prios.items():
+            if len(ID.split("-"))== 2:
+                cat = self.allocation.cat_map[ID]
+                if cat in prios:
+                    prios[cat].append({"ID": ID, "value": value})
+                else:
+                    prios[cat] = [{"ID": ID, "value": value}]
+            else:
+                general.append({"ID": ID, "value": value})
+        for cat in prios.keys():
+            prios[cat] = sorted(prios[cat], key=lambda d : d["value"])
+        self.prios_sorted = prios
+        self.general = general
+
+    def __repr__(self):
+        s = dedent(f"""
+            \033[1m\033[34m{self.ID}: {self.fullname} {self.group}\033[0m 
+            n_people: {self.n_people} | email: {self.email}
+            contact: {self.contact} | wasser_anerk: {self.wasser_anerk}
+            more_or_less: {self.more_or_less}
+            """
+        )
+        s += f"  \033[1mGeneral:\033[0m\n"
+        for g in self.general:
+            s += f"    - {g['ID']}: {g['value']}\n"
+
+        for cat, prio_list in self.prios_sorted.items():
+            s += f"  \033[1m{cat}:\033[0m\n"
+            for prio in prio_list:
+                s += f"    - {prio['ID']}: {prio['value']}\n"
+        
+        return s
+        
+        
 
 class Allocation:
     def __init__(self, seed):
@@ -481,6 +589,10 @@ class Allocation:
         self.UNITS = []
         self.seed = seed
         self.random = np.random
+
+        self.append_block(
+            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"]})
+        )
 
     def evaluate(self, alloc_func):
         # random.seed(self.seed)
@@ -522,12 +634,14 @@ class Allocation:
         for block in self.BLOCKS:
             if block.ID == ID:
                 return block
+        print(f"ERROR: could not find Block with ID '{ID}'")
         return None
 
     def get_unit_by_ID(self, ID):
         for unit in self.UNITS:
             if unit.ID == ID:
                 return unit
+        print(f"ERROR: could not find Unit with ID '{ID}'")
         return None
     
     def append_block(self, block):
@@ -539,6 +653,7 @@ class Allocation:
         if type(unit) != Unit: print(f"ERROR: type is not block but '{type(unit)}'"); return 0
         self.UNITS.append(unit)
         unit.allocation = self
+        unit.sort_prios_by_cat()
     
     def search_blocks(self, slot, requirements={}):
         open_blocks = []
@@ -546,6 +661,31 @@ class Allocation:
             if slot in block.search_slots(requirements):
                 open_blocks.append(block)
         return open_blocks
+
+    def find_block_cats(self):
+        cats = []
+        cat_map = {}
+        for b in self.BLOCKS:
+            cat_map[b.ID] = b.data["cat"]
+            if b.data["cat"] not in cats:
+                cats.append(b.data["cat"])
+        
+        cat_map["AUX-FL"] = "Flussbaden"
+        cat_map["AUX-FR"] = "Wasser"
+        cat_map["AUX-HB"] = "Wasser"
+            
+        self.block_cats = cats
+        self.cat_map = cat_map
+
+    def generete_block_series(self, base_id, count, data):
+        for i in range(count):
+            block_id = f"{base_id}{chr(65+i)}"
+            self.append_block(
+                Block(
+                    block_id,
+                    data
+                )
+            )
 
 
  
@@ -624,7 +764,7 @@ class Allocation:
     #                 {   "fullname": bd.name,
     #                     "space": bd.gruppengroesse,
     #                     "js_type": bd.blockart_J_S,
-    #                     "cath": bd.typ,
+    #                     "cat": bd.typ,
     #                     "group": bd.stufen.split(", ") if type(bd.stufen) == str else bd.stufen,
     #                     # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
     #                     "length": length,
@@ -654,7 +794,7 @@ class Allocation:
                     {   
                         "space": 24* random.randint(1, 2),
                         "js_type": random.choice(["LS", "LA", "LP"]),
-                        "cath": random.choice(["wasser", "workshop", "none", "none", "none", "none", "none", "none", "none", "none"]),
+                        "cat": random.choice(["wasser", "workshop", "none", "none", "none", "none", "none", "none", "none", "none"]),
                         "group": ["wo", "pf", "pi"],
                         # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
                         "length": length,
@@ -664,6 +804,7 @@ class Allocation:
                     }
                 )
             )
+        self.find_block_cats()
         
 
     def load_example_unitlist(self, N = 10, N_Blocks=10):

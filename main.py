@@ -36,7 +36,7 @@ def more_magic_recursive_allocation_function(allocation):
         for block_prio in unit.highest_unmatched_prios(4):
             block = allocation.get_block_by_ID(block_prio["ID"])
             block_slots = block.search_slots({"space": unit.n_people, "group": unit.data["group"]})
-            unit_slots = unit.search_slots({"cath": block.data["cath"]})
+            unit_slots = unit.search_slots({"cat": block.data["cat"]})
             matching = Schedule.matching_slots(unit_slots, block_slots)
             if matching:
                 for slot in matching:

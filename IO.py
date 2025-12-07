@@ -108,49 +108,106 @@ def replace_text_in_document(doc, placeholder, replacement):
                 replace_text_in_paragraph(paragraph, placeholder, replacement)
 
 
-def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx"):
+def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx", print_enabled=False):
+    full_labels = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=1).columns.tolist()
     df = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=2)
-    
-    PRIOS = [
-        ["Umbedingt", "Das wollen wir unbendingt machen"],
-        ["Sehr Gerne", "Das würden wir sehr gerne machen"],
-        ["Gerne", "Das würden wir gerne machen"],
-        ["Neutral"],
-        ["Lieber nicht", "Das wollen wir nicht machen"]
-    ]
-    for ip, p in enumerate(PRIOS):
-        for pp in  p:
-            df.replace(pp, str(ip+1), inplace=True)
-    
-    for column in df.columns:
-        print(f"{column}: \033[1m{df.loc[0, column]}\033[0m")
-    for index, row in df.iterrows():
-        # Convert the row to a dictionary
 
-        data = {col: row[col] for col in df.columns}
-        data["n_people"] = 24
-        allocation.append_unit(
-            Unit(
-                data["ID"],
-                data=data
+    df.dropna(subset=["ID_all_int"], inplace=True)
+
+    for ic, col in enumerate(df.columns):
+        new = col
+        display_full_label = full_labels[ic].replace("\n", " ")
+        if len(display_full_label) > 80:
+            display_full_label = display_full_label[:77] + "..."
+        if col.startswith("Unnamed") and full_labels[ic].startswith("Unnamed"):
+            if print_enabled: print(f"\033[31m{new:>20}\033[0m: {display_full_label} (will get removed)")
+        elif col.startswith("Unnamed") and not full_labels[ic].startswith("Unnamed"):
+            try:
+                ID = full_labels[ic].split("[")[2].split("]")[0]  
+                group = full_labels[ic].split(" - ")[1].split(" ")[0][:2].lower()
+                if group == "wö":
+                    group = "wo"
+                new = f"{ID}_{group}_m3"
+                df.rename(columns={col: new}, inplace=True)
+                if print_enabled: print(f"\033[32m{new:>20}\033[0m: {display_full_label}")
+            except:
+                if print_enabled: print(f"\033[31m{new:>20}\033[0m: '{display_full_label}' will get removed for no parsing")
+                new = full_labels[ic]
+        elif not col.startswith("Unnamed") and not full_labels[ic].startswith("Unnamed"):
+            if print_enabled: print(f"\033[32m{new:>20}\033[0m: {display_full_label}")
+        else:
+            print(f"\033[31mERROR Label with no fullname \033[0m: '{display_full_label}' will get removed")
+            # new = full_labels[ic]
+
+    
+    for col in df.columns:
+        if col.startswith("Unnamed"):
+            df.drop(columns=[col], inplace=True)
+
+    if print_enabled:
+        print("\033[32mFinal columns:\033[0m")
+        for col in df.columns:
+            print(f"{col:>20}") 
+
+    group_df = []
+    for group in ["Pios", "Pfadis", "Wölfe"]:
+        df_group = df[df["group_all_tx"] == group].reset_index(drop=True)
+        df_group = df_group[[c for c in df.columns if f"_{group[:2].lower().replace('ö', 'o')}_" in c or "_all" in c]]
+
+        for ic, col in enumerate(df_group.columns):
+            # print(f"{'_'.join(col.split('_')[:-2]):>20}") 
+            if col.endswith("_m3") or col.endswith("_02") or col.endswith("_03")  or col.endswith("_05") or col.endswith("_int"):
+                df_group = df_group.astype({col:"int32"})
+            if col.endswith("_tx"):
+                df_group = df_group.astype({col:"string"})
+            if col.endswith("_jn"):
+                df_group[col] = df_group[col].map({"Ja": True, "Nein": False})
+                df_group = df_group.astype({col:"bool"})
+            df_group.rename(columns={col: '_'.join(col.split('_')[:-2])}, inplace=True)
+        group_df.append(df_group)
+
+    df_pi, df_pf, df_wo = group_df
+
+    unclassified = [c for c in df.columns if ("_pi_" not in c) and ("_pf_" not in c) and ("_wo_" not in c) and ("_all_" not in c) and ("ID" not in c)]
+    if print_enabled:
+        if len(unclassified) >0:
+            print("\033[31mUnclassified columns (not assigned to any group):\033[0m")
+            for col in unclassified:
+                print(f"{col:>20}")
+        else:
+            print("\033[32mAll columns classified into groups.\033[0m")
+
+
+    if print_enabled:
+        for df_, name in zip([df_pi, df_pf, df_wo], ["Pios", "Pfadis", "Wölfe"]):
+            print(f"\033[32m{name} Final columns:\033[0m")
+            for col in df_.columns:
+                print(f"{col:>20}: {df_.dtypes[col]}")
+       
+
+    for df_ in [df_pi, df_pf, df_wo]:
+        for i in range(df_.shape[0]):
+            allocation.append_unit(
+                Unit(
+                    str(int(df_.loc[i, "ID"])),
+                    data={col: df_.loc[i, col] for col in df_.columns[1:]}
             )
         )
 
-    # TODO: load unit list
-
+    print(f"Loaded {len(allocation.UNITS)} units.")
+    
+    
 def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
 
     # TODO: load unit list
     df = pd.read_excel(os.path.join(path, filename), sheet_name="On-Site Buchbar")
     df = df[[
         'Block Nr.',
-        'Off-Site', 
-        'Block- Titel',
-        'Ort', 
+        'Kategorie', 
+        'Titel',
         'Programmstruktur', 
-        'On-Site', 'Off-Site.1',
-        'Blockdauer', 
-        'Blockart J+S', 
+        'Dauer', 
+        'J+S', 
         'Stufe', 
         'Gruppengrösse', 
         'Partizipation',
@@ -160,22 +217,49 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
 
     df.columns = [
         'ID',
-        'typ', 
+        'cat', 
         'fullname',
-        'ort', 
         'betr_unbetr', 
-        'tags_onsite', 'tags_offsite',
         'dauer', 
         'blockart_J_S', 
         'stufen', 
         'gruppengroesse', 
         'mix_units',
-        'max_durchführungen',
-        'est_durchführungen'
+        'max_durchfuhrungen',
+        'est_durchfuhrungen'
     ]
-    df = df.dropna(subset=["ID"])
 
-    print(df["stufen"])
+    df_offsite = pd.read_excel(os.path.join(path, filename), sheet_name="Off Site & Wasser")
+    df_offsite = df_offsite[[
+        'Block Nr.',
+        'Off-Site', 
+        'Block- Titel',
+        'Programmstruktur', 
+        'Blockdauer', 
+        'Blockart J+S', 
+        'Stufe', 
+        'Gruppengrösse', 
+        'Partizipation',
+        'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
+        'geschätzte Anzahl Durchführungen'
+    ]]
+
+    df_offsite.columns = [
+        'ID',
+        'cat', 
+        'fullname',
+        'betr_unbetr', 
+        'dauer', 
+        'blockart_J_S', 
+        'stufen', 
+        'gruppengroesse', 
+        'mix_units',
+        'max_durchfuhrungen',
+        'est_durchfuhrungen'
+    ]
+
+    df = pd.concat([df, df_offsite], ignore_index=True)
+    df = df.dropna(subset=["ID"])
     for bd in df.itertuples():
         
         length = 1
@@ -197,7 +281,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
                 {   "fullname": bd.fullname,
                     "space": bd.gruppengroesse,
                     "js_type": bd.blockart_J_S,
-                    "cath": bd.typ,
+                    "cat": bd.cat,
                     "group": bd.stufen.split(", ") if type(bd.stufen) == str else bd.stufen,
                     # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
                     "length": length,
@@ -207,6 +291,10 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
                 }
             )
         )
+    
+    allocation.find_block_cats()
+    print(f"Loaded {len(allocation.BLOCKS)} blocks.")
+
  
 def plot_block(ax, slot, block):
     day, slot = Schedule.to_idx(slot)
