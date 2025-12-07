@@ -184,13 +184,21 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             for col in df_.columns:
                 print(f"{col:>20}: {df_.dtypes[col]}")
        
+    tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
+    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende"]]
+    tn_numbers = tn_numbers.astype({"ID": "string"}).set_index("ID")
 
     for df_ in [df_pi, df_pf, df_wo]:
         for i in range(df_.shape[0]):
+            ID = str(int(df_.loc[i, "ID"]))
+            data = {col: df_.loc[i, col] for col in df_.columns[1:]}
+            data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
+            data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
+
             allocation.append_unit(
                 Unit(
-                    str(int(df_.loc[i, "ID"])),
-                    data={col: df_.loc[i, col] for col in df_.columns[1:]}
+                    ID,
+                    data       
             )
         )
 

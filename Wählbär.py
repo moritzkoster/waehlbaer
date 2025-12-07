@@ -353,8 +353,8 @@ class Block:
 class Unit: 
     def __init__(self, ID, data):
         self.ID = ID
-        self.fullname = "FULLNAME"
-        self.n_people = 12
+        self.fullname = data["fullname"]; del data["fullname"]
+        self.n_people = data["n_people"]; del data["n_people"]
         
         self.contact = data["contact"]; del data["contact"]
         self.email = data["email"]; del data["email"]
@@ -570,13 +570,18 @@ class Unit:
             """
         )
         s += f"  \033[1mGeneral:\033[0m\n"
-        for g in self.general:
-            s += f"    - {g['ID']}: {g['value']}\n"
+        for i in range(len(self.general)):
+            g = self.general[i]
+            s += f"  {g['ID']:>18}: {g['value']:<5}"
+            if i % 4 == 3 or i == len(self.general) -1:
+                s+= "\n"
 
         for cat, prio_list in self.prios_sorted.items():
             s += f"  \033[1m{cat}:\033[0m\n"
-            for prio in prio_list:
-                s += f"    - {prio['ID']}: {prio['value']}\n"
+            for ip, prio in enumerate(prio_list):
+                s += f"  {prio['ID']:>18}: {prio['value']:<5}"
+                if ip % 4 == 3 or ip == len(prio_list) -1:
+                    s+= "\n"
         
         return s
         
