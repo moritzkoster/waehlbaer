@@ -157,6 +157,7 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
         for ic, col in enumerate(df_group.columns):
             # print(f"{'_'.join(col.split('_')[:-2]):>20}") 
             if col.endswith("_m3") or col.endswith("_02") or col.endswith("_03")  or col.endswith("_05") or col.endswith("_int"):
+                df_group.fillna({col:-1}, inplace=True)
                 df_group = df_group.astype({col:"int32"})
             if col.endswith("_tx"):
                 df_group = df_group.astype({col:"string"})
@@ -165,6 +166,13 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 df_group = df_group.astype({col:"bool"})
             df_group.rename(columns={col: '_'.join(col.split('_')[:-2])}, inplace=True)
         group_df.append(df_group)
+        
+        
+        df_group["OFF-26"] = df_group["AUX-HB"]
+        df_group["OFF-27"] = df_group["AUX-HB"]
+        df_group["OFF-28"] = df_group["AUX-FR"]
+        df_group["OFF-29"] = df_group["AUX-FR"]
+        df_group.drop(columns=["AUX-HB", "AUX-FR"], inplace=True)
 
     df_pi, df_pf, df_wo = group_df
 
@@ -192,6 +200,7 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
         for i in range(df_.shape[0]):
             ID = str(int(df_.loc[i, "ID"]))
             data = {col: df_.loc[i, col] for col in df_.columns[1:]}
+            data["group"] = data["group"][:2]
             data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
             data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
 
@@ -220,7 +229,9 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'Gruppengrösse', 
         'Partizipation',
         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
-        'geschätzte Anzahl Durchführungen'
+        'geschätzte Anzahl Durchführungen',
+
+        'Verteilungsprio'
     ]]
 
     df.columns = [
@@ -234,7 +245,9 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'gruppengroesse', 
         'mix_units',
         'max_durchfuhrungen',
-        'est_durchfuhrungen'
+        'est_durchfuhrungen',
+
+        'verteilungsprio'
     ]
 
     df_offsite = pd.read_excel(os.path.join(path, filename), sheet_name="Off Site & Wasser")
@@ -249,7 +262,10 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'Gruppengrösse', 
         'Partizipation',
         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
-        'geschätzte Anzahl Durchführungen'
+        'geschätzte Anzahl Durchführungen',
+
+        "Verteilungsprio"
+
     ]]
 
     df_offsite.columns = [
@@ -263,7 +279,9 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'gruppengroesse', 
         'mix_units',
         'max_durchfuhrungen',
-        'est_durchfuhrungen'
+        'est_durchfuhrungen',
+
+        'verteilungsprio'
     ]
 
     df = pd.concat([df, df_offsite], ignore_index=True)
@@ -281,21 +299,31 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         if bd.dauer == "2 Tage":
             length = 7
             on_times = [0]
-        
-        allocation.append_block(
 
+        group = [e[:2].lower().replace("ö", "o") for e in bd.stufen.split(", ")]
+
+        cat = bd.cat.lower().replace("ä", "a")
+        if cat == "zweitageswanderung":
+            cat = "wanderung"
+
+        tags = set()
+        if "2 Einheiten" in bd.fullname:
+            tags.add("2units")
+
+        allocation.append_block(
             Block(
                 bd.ID,
                 {   "fullname": bd.fullname,
                     "space": bd.gruppengroesse,
                     "js_type": bd.blockart_J_S,
-                    "cat": bd.cat,
-                    "group": bd.stufen.split(", ") if type(bd.stufen) == str else bd.stufen,
-                    # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
+                    "cat":  cat,
+                    "group": group,
                     "length": length,
-                    # "on_days": [0, 1, 2, 3, 4, 5, 6],
-                    "on_times": on_times
-                    
+                    "on_days": [1, 2, 3, 4, 5, 7, 8, 9, 10, 11],
+                    "on_times": on_times,
+                    "tags": tags,
+
+                    "verteilungsprio": bd.verteilungsprio
                 }
             )
         )
@@ -350,17 +378,18 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
     workbook = xls.Workbook(os.path.join(path,fname))
 
     merge_format = workbook.add_format(
-    {
-        "bold": 1,
-        "border": 0,
-        "align": "center",
-        "valign": "vcenter",
-        # "fg_color": "yellow",
-    }
-)
+        {
+            "bold": 1,
+            "border": 0,
+            "align": "center",
+            "valign": "vcenter",
+            # "fg_color": "yellow",
+        }
+    )
 
     for iu, unit in enumerate(allocation.UNITS):
         # unit = allocation.UNITS[0]
+        print(f"Writing unit {unit.ID} to xlsx...")
         worksheet = workbook.add_worksheet(unit.ID)
         worksheet.merge_range("B1:O1", unit.ID, merge_format)
         for i in range(1, SLOTS_PER_DAY +1):
