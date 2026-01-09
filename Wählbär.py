@@ -10,6 +10,13 @@ DAYS = 14
 
 NRANKS = 5
 
+RED = "\033[31m"
+YELLOW = "\033[33m"
+GREEN = "\033[32m"
+BOLD = "\033[1m"
+RESET = "\033[0m"
+
+
 class Schedule: 
     def __init__(self, owner):
         self.calendar = [[[] for _ in range(SLOTS_PER_DAY)] for __ in range(DAYS)]
@@ -135,21 +142,39 @@ class Schedule:
         return slot_list
     
     @staticmethod
-    def matching_slots(first, second):
-        matching = []
-        for slot in first:
-            if slot in second:
-                matching.append(slot)
-        return matching
+    def matching_slots(unit_slots, block_slots):
+        if type(block_slots) == list:
+            matching = []
+            for slot in unit_slots:
+                if slot in block_slots:
+                    matching.append(slot)
+            return matching
+        elif type(block_slots) == dict:
+            matching = []
+            for block_id, slotlist in block_slots.items():
+                for slot in slotlist:
+                    if slot in unit_slots:
+                        matching.append({"ID": block_id, "slot": slot})
+            return matching
+        else:
+            print(f"{RED}{BOLD}: unit_slots must be 'list' and block_slots must be 'list' or dict of lists{RESET}")
     
 def soft_assign_musthave_blocks(slot, self, block_req):
     # TODO: check if it is possible the have 2d hike and staff later
     return True
 
 def no_two_on_same_day(slot, self, block):
+    # if block["cat"] == "dusche":
+    #     return True
+    if "tags" in block and "same_day" in block["tags"]:
+        return True
     for time in self.schedule.calendar[Schedule.to_idx(slot)[0]]:
-        if time:
-            return False
+        if time: # If there is something at this time
+            for b in time: 
+                # if b.data["cat"] != "dusche": # if it is not a shower block
+                #     return False
+                if "tags" in b.data and "same_day" not in b.data["tags"]:
+                    return False
     return True  
 
 def no_two_water_activities(slot, self, block_req):
@@ -243,6 +268,11 @@ class Block:
 
         self.rules = BLOCK_RULES
 
+        if self.data["cat"] in ["wasser", "si-mo", "flussbaden", "dusche"]:
+            self.data["tags"].add("nass")
+        if self.data["cat"] in ["wasser", "dusche"]:
+            self.data["tags"].add("sauber")
+
     def get_space(self, slot):
         taken = 0
         for unit in self.schedule[slot]:
@@ -256,11 +286,11 @@ class Block:
             return self.get_space(slot), ["wo", "pf", "pi"]
         
         taken=0
-        group = self.schedule[slot][0].data["group"]
+        group = self.schedule[slot][0].group
         for unit in self.schedule[slot]:
             taken += unit.n_people
-            if unit.data["group"] != group:
-                print(f"ERROR: two different groups assigned to block {self.ID}")
+            if unit.group != group:
+                print(f"{RED}ERROR: two different groups assigned to block {self.ID}{RESET}")
                 print(self.schedule[slot]); exit()
         return self.data["space"] - taken, [group]
         
@@ -291,6 +321,7 @@ class Block:
 
     def to_dict(self):
         unit_list = self.schedule.get_list(with_slot=True, id_only=True)
+        self.data["tags"] = list(self.data["tags"])
         d = {
             "type": "block",
             "ID": self.ID,
@@ -302,68 +333,73 @@ class Block:
     def __repr__(self):
         data = self.data
         s = dedent(f"""
-            \033[1m\033[34m{self.ID}: {data["fullname"]}\033[0m
+            \033[1m\033[34m{self.ID}: {data["fullname"]} ({data["verteilungsprio"]})\033[0m
             {data["js_type"]}: {data["cat"]} 
             space: {data["space"]} | duration: {data["length"]}
-            for: {data["group"]}"""
+            for: {", ".join(data["group"])} | tags: {YELLOW}{', '.join(data['tags'])}{RESET}"""
         )
         return s
 
-# class MetaBlock(Block):
-#     def __init__(self, ID, data):
-#         super().__init__(ID, data)
-#         self.sub_blocks = []
+class MetaBlock(Block):
+    def __init__(self, ID, data):
+        super().__init__(ID, data)
+        self.sub_blocks = []
 
-#     def add_subblock(self, block):
-#         if type(block) != Block:
-#             print(f"ERROR: type is not block but '{type(block)}'"); return 0
-#         self.sub_blocks.append(block)
+    def add_subblock(self, block):
+        if type(block) != Block:
+            print(f"ERROR: type is not block but '{type(block)}'"); return 0
+        self.sub_blocks.append(block)
     
-#     def search_slots(self, requirements):
-#         slots = {}
-#         for sub_block in self.sub_blocks:
-#             slots[sub_block.ID] = sub_block.search_slots(requirements)
-#         return slots
+    def search_slots(self, requirements):
+        slots = {}
+        for sub_block in self.sub_blocks:
+            slots[sub_block.ID] = sub_block.search_slots(requirements)
+        return slots
 
-#     def set_unit(self, unit, slot):
-#         if type(slot) != dict:
-#             print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
-#         for sub_block in self.sub_blocks:
-#             if sub_block.ID == slot["ID"]:
-#                 sub_block.set_unit(unit, slot["slot"])
-#                 return
-#         print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
+    def set_unit(self, unit, slot):
+        if type(slot) != dict:
+            print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
+        for sub_block in self.sub_blocks:
+            if sub_block.ID == slot["ID"]:
+                sub_block.set_unit(unit, slot["slot"])
+                return
+        print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
     
-#     def remove_unit(self, unit=None, slot=None):
-#         if type(slot) != dict:
-#             print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
-#         for sub_block in self.sub_blocks:
-#             if sub_block.ID == slot["ID"]:
-#                 sub_block.remove_unit(unit, slot["slot"])
-#                 return
-#         print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
+    def remove_unit(self, unit=None, slot=None):
+        if type(slot) != dict:
+            print("ERROR: MetaBlock expects slot as dict of '{ID:OFF-12: slot:A1}'"); return 
+        for sub_block in self.sub_blocks:
+            if sub_block.ID == slot["ID"]:
+                sub_block.remove_unit(unit, slot["slot"])
+                return
+        print(f"ERROR: could not find sub_block with ID '{slot['ID']}' in MetaBlock '{self.ID}'")
         
-#     def __repr__(self):
-#         s = f"\033[1m\033[34m{self.ID}: {self.data['fullname']}\033[0m"
-#         s += "\n  Sub-Blocks:\n"
-#         for sb in self.sub_blocks:
-#             s += "    - " + sb.ID + ": " + sb.data["fullname"] + "\n"
-#         return s
+    def __repr__(self):
+        s = f"\n{BOLD}{GREEN}Meta {self.ID}: {self.data['fullname']}{RESET}"
+        s += "\n  Sub-Blocks:\n"
+        for sb in self.sub_blocks:
+            s += "    - " + sb.ID + ": " + sb.data["fullname"] + "\n"
+        return s
 
 class Unit: 
     def __init__(self, ID, data):
         self.ID = ID
         self.fullname = data["fullname"]; del data["fullname"]
         self.n_people = data["n_people"]; del data["n_people"]
+
         
         self.contact = data["contact"]; del data["contact"]
         self.email = data["email"]; del data["email"]
-        self.group = data["group"]; del data["group"]
+        self.group = data["group"].lower().replace("ö", "o"); del data["group"]
         self.more_or_less = data["more_or_less"]; del data["more_or_less"]
         self.wasser_anerk = data["wasser_anerk"]; del data["wasser_anerk"]
 
         self.prios = data
         self.prios_sorted = None
+        self.general = None
+
+        self.tags = set()
+        if self.n_people > 30: self.tags.add("large_unit")
         # self.sort_prios_by_cat() is called while appending the unit
         
         self.schedule = Schedule(self)
@@ -387,8 +423,19 @@ class Unit:
     # define how the score is calculated 
     # TODO: Is this the Way???
     def score(self):
-        return self.score_top_N_norm()
+        return self.score_advanced()
     
+    def score_advanced(self):
+        score = 0
+        cf = 0
+        for cat in self.prios_sorted:
+            for prio in self.prios_sorted[cat]:
+                
+                cf += prio["value"]
+                if self.has_block(prio["ID"]):
+                    score += prio["value"]
+        return score / cf
+
     def score_sum_prios(self): 
         score = 0     
         for block in self.schedule.get_list():
@@ -488,16 +535,19 @@ class Unit:
     
     # assumes prios are sorted by rank
     def get_highest_unmatched_by_cat(self, cat): 
-        prios = []
-        for prio in self.prios[cat]:
-            if not self.has_block(prio):
+        if not cat in self.prios_sorted:
+            return None
+        for prio in self.prios_sorted[cat]:
+            if not self.has_block(prio["ID"]):
                 return prio
         return None
     
     def get_all_unmatched_by_cat(self, cat):
+        if not cat in self.prios_sorted:
+            return None
         prios = []
-        for prio in self.prios[cat]:
-            if not self.has_block(prio):
+        for prio in self.prios_sorted[cat]:
+            if not self.has_block(prio) and prio["value"] >= 0:
                 prios.append(prio)
         return prios
 
@@ -546,42 +596,81 @@ class Unit:
     def sort_prios_by_cat(self):
         if not hasattr(self.allocation, "block_cats"): print("\033[1m\033[31mERR: call 'find_block_cats()' first\033[0m")
         prios = {}
-        general = []
+        general = {}
+        total = 0
+        possible = 0
         for ID, value in self.prios.items():
             if len(ID.split("-"))== 2:
                 cat = self.allocation.cat_map[ID]
+                
+                if ID == "AUX-FL":
+                    general["flussbaden"] = value
+                    if value:
+                        if self.group == "wo":
+                            prios[cat] = [{"ID": "OFF-21", "value": 3}, {"ID": "OFF-22", "value": -1}, {"ID": "OFF-23", "value": -1}]
+                        else:
+                            prios[cat] = [{"ID": "OFF-21", "value": 3}, {"ID": "OFF-22", "value": 3}, {"ID": "OFF-23", "value": 3}]
+                    else:
+                        prios[cat] = [{"ID": "OFF-21", "value": -1}, {"ID": "OFF-22", "value": -1}, {"ID": "OFF-23", "value": -1}]
+                    continue
+
                 if cat in prios:
                     prios[cat].append({"ID": ID, "value": value})
                 else:
                     prios[cat] = [{"ID": ID, "value": value}]
+
+                
+                total+= max(0, value)
+                possible += 3
+
             else:
-                general.append({"ID": ID, "value": value})
+                general[ID] = value
+                if ID == "wasser":
+                    general["si-mo"] = value
+                
         for cat in prios.keys():
             prios[cat] = sorted(prios[cat], key=lambda d : d["value"])
+        
         self.prios_sorted = prios
         self.general = general
+        
+        if self.group == "pi":
+            self.score_cf = total / 124  * self.more_or_less / 5
+            if total < 50: 
+                self.tags.add("frechdachs")
+        if self.group == "pf":
+            self.score_cf = total / 149  * self.more_or_less / 5
+            if  total < 60:
+                self.tags.add("frechdachs")
+        if self.group == "wo":
+            self.score_cf = total / 89  * self.more_or_less / 5
+            if total < 30:
+                self.tags.add("frechdachs")
+            
 
     def __repr__(self):
         s = dedent(f"""
             \033[1m\033[34m{self.ID}: {self.fullname} {self.group}\033[0m 
             n_people: {self.n_people} | email: {self.email}
             contact: {self.contact} | wasser_anerk: {self.wasser_anerk}
-            more_or_less: {self.more_or_less}
+            more_or_less: {self.more_or_less} | cf: {self.score_cf:.3f} | tags: {YELLOW}{BOLD} {', '.join(self.tags)} {RESET}
             """
         )
         s += f"  \033[1mGeneral:\033[0m\n"
-        for i in range(len(self.general)):
-            g = self.general[i]
-            s += f"  {g['ID']:>18}: {g['value']:<5}"
+        i = 0
+        for key, val in self.general.items():
+            s += f"  {GREEN if val else RED}{key:>18}: {val:<5}{RESET}"
             if i % 4 == 3 or i == len(self.general) -1:
                 s+= "\n"
+            i+=1
 
         for cat, prio_list in self.prios_sorted.items():
-            s += f"  \033[1m{cat}:\033[0m\n"
-            for ip, prio in enumerate(prio_list):
-                s += f"  {prio['ID']:>18}: {prio['value']:<5}"
-                if ip % 4 == 3 or ip == len(prio_list) -1:
-                    s+= "\n"
+            if self.general[cat]:
+                s += f"  \033[1m{cat}:\033[0m\n"
+                for ip, prio in enumerate(prio_list):
+                    s += f"  {prio['ID']:>18}: {prio['value']:>2} {'(A)' if self.has_block(prio) else ''}"
+                    if ip % 4 == 3 or ip == len(prio_list) -1:
+                        s+= "\n"
         
         return s
         
@@ -596,7 +685,7 @@ class Allocation:
         self.random = np.random
 
         self.append_block(
-            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"]})
+            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6})
         )
 
     def evaluate(self, alloc_func):
@@ -612,6 +701,8 @@ class Allocation:
             file.write(json.dumps(l, indent=4))
 
     def load(self, fname, path="saves"):
+        if not self.UNITS or not self.BLOCKS:
+            print(f"{RED}{BOLD}Load units and blocklists first with 'load_unitlist(a)' and 'load_blocklist(a)'{RESET}")
         with open(os.path.join(path, fname), "r") as file:
             data = json.load(file)
         for d in data:
@@ -650,12 +741,15 @@ class Allocation:
         return None
     
     def append_block(self, block):
-        if type(block) != Block: print(f"ERROR: type is not block but '{type(block)}'"); return 0
+        if type(block) != Block and type(block) != MetaBlock: print(f"ERROR: type is not block but '{type(block)}'"); return 0
         self.BLOCKS.append(block)
         block.allocation = self
     
     def append_unit(self, unit):
         if type(unit) != Unit: print(f"ERROR: type is not block but '{type(unit)}'"); return 0
+        if self.get_unit_by_ID(unit.ID): 
+            print(f"{YELLOW}WARN: unit with ID '{unit.ID}' already exists and is replaced{RESET}")
+            self.UNITS.remove(self.get_unit_by_ID(unit.ID))
         self.UNITS.append(unit)
         unit.allocation = self
         unit.sort_prios_by_cat()
@@ -675,22 +769,32 @@ class Allocation:
             if b.data["cat"] not in cats:
                 cats.append(b.data["cat"])
         
-        cat_map["AUX-FL"] = "Flussbaden"
-        cat_map["AUX-FR"] = "Wasser"
-        cat_map["AUX-HB"] = "Wasser"
+        cat_map["AUX-FL"] = "flussbaden"
+        cat_map["AUX-FR"] = "wasser"
+        cat_map["AUX-HB"] = "wasser"
             
         self.block_cats = cats
         self.cat_map = cat_map
 
-    def generete_block_series(self, base_id, count, data):
+    def generate_block_series(self, base_id, count, data):
+        mb = MetaBlock(base_id, data)
         for i in range(count):
             block_id = f"{base_id}{chr(65+i)}"
-            self.append_block(
-                Block(
+            b = Block(
                     block_id,
                     data
                 )
-            )
+            self.append_block(b)
+            mb.add_subblock(b)
+        self.append_block(mb)
+    
+    def print_blocklist(self):
+        for b in self.BLOCKS:
+            print(b)
+    
+    def print_unitlist(self):
+        for u in self.UNITS:
+            print(u)
 
 
  
