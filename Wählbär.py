@@ -13,6 +13,7 @@ NRANKS = 5
 RED = "\033[31m"
 YELLOW = "\033[33m"
 GREEN = "\033[32m"
+BLUE = "\033[34m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -49,6 +50,14 @@ class Schedule:
                         else:
                             l.append(entry)
         return l
+
+    def get_time_list(self):
+        l = []
+        for idd, day in enumerate(self.calendar):
+            for it, time in enumerate(day):
+                if time:
+                    l.append({"slot": self.idx2str(idd, it), "elements": [e.ID for e in time]})
+        return l
     
     @staticmethod
     def to_idx(ipt):
@@ -73,6 +82,7 @@ class Schedule:
             print("INDEX OF SLOT TOO LARGE")
             return None
         return day, time
+
     
     def idx2str(self, day, time):
         return chr(day+65)+str(time)
@@ -159,14 +169,11 @@ class Schedule:
         else:
             print(f"{RED}{BOLD}: unit_slots must be 'list' and block_slots must be 'list' or dict of lists{RESET}")
     
-def soft_assign_musthave_blocks(slot, self, block_req):
-    # TODO: check if it is possible the have 2d hike and staff later
-    return True
 
-def no_two_on_same_day(slot, self, block):
+def no_two_on_same_day(slot, self, blockdata):
     # if block["cat"] == "dusche":
     #     return True
-    if "tags" in block and "same_day" in block["tags"]:
+    if "tags" in blockdata and "same_day" in blockdata["tags"]:
         return True
     for time in self.schedule.calendar[Schedule.to_idx(slot)[0]]:
         if time: # If there is something at this time
@@ -216,7 +223,7 @@ def no_two_workshops_in_same_week(slot, self, block_req):
         return True 
 
 UNIT_RULES = [
-    soft_assign_musthave_blocks,
+    # soft_assign_musthave_blocks,/
     no_two_on_same_day#,
     # no_two_water_in_same_week,
     # no_two_workshops_in_same_week
@@ -249,6 +256,12 @@ def on_days_unit(slot, self, unit_req):
 def on_times_unit(slot, self, unit_req):
     return False if "on_times" in unit_req and Schedule.to_idx(slot)[1] not in unit_req["on_times"] else True
 
+def only_single_unit(slot, self, unit_req):
+    if self.schedule[slot] and not self.data["mix_units"]:
+        return False
+    return True
+
+
 BLOCK_RULES = [
     # has_space,
     # is_for_group,
@@ -258,6 +271,7 @@ BLOCK_RULES = [
     not_in_slot_block,
     on_days_unit,
     on_times_unit,
+    only_single_unit
 ]
 
 class Block:
@@ -296,7 +310,12 @@ class Block:
         
     
     def set_unit(self, unit, slot):
-        self.schedule.set_unit(unit, slot)  
+        if type(slot) == dict:
+            self.schedule.set_unit(unit, slot["slot"])
+        elif type(slot) == str:
+            self.schedule.set_unit(unit, slot)
+        else:
+            print("ERROR: slot must be str 'A0' or dict {'slot': 'A0', ...}"); return 
 
     def remove_unit(self, unit=None, slot=None):
         self.schedule.remove_unit(self, unit, slot)
@@ -306,17 +325,28 @@ class Block:
     # groups slots per day, so that days are filled first
     # returns [[best1, best2], [sec1, ...]]
 
-    def search_slots(self, requirements):
+    def search_slots(self, requirements, return_reason=False):
         slots = []
-
-        for iss, slot in enumerate(self.schedule.free_slots()):
+        search_result = SearchResult(self, requirements)
+        free_slots = self.schedule.free_slots()
+        if not free_slots:
+            if return_reason:
+                search_result.reason.add("Block free slots available")
+                return search_result
+            return []
+        for iss, slot in enumerate(free_slots):
             matching = True
             for rule in self.rules:
                 if not rule(slot["slot"], self, requirements):
                     matching = False
+                    if return_reason:
+                        search_result.reason.add(f"Block-Rule '{rule.__name__}' not fulfilled")
                     break
             if matching:
                 slots.append(slot["slot"])
+        if return_reason:
+            search_result.slots = slots
+            return search_result
         return slots
 
     def to_dict(self):
@@ -335,7 +365,7 @@ class Block:
         s = dedent(f"""
             \033[1m\033[34m{self.ID}: {data["fullname"]} ({data["verteilungsprio"]})\033[0m
             {data["js_type"]}: {data["cat"]} 
-            space: {data["space"]} | duration: {data["length"]}
+            space: {data["space"]} | duration: {data["length"]} | mix: {data['mix_units']}
             for: {", ".join(data["group"])} | tags: {YELLOW}{', '.join(data['tags'])}{RESET}"""
         )
         return s
@@ -350,10 +380,21 @@ class MetaBlock(Block):
             print(f"ERROR: type is not block but '{type(block)}'"); return 0
         self.sub_blocks.append(block)
     
-    def search_slots(self, requirements):
+    def search_slots(self, requirements, return_reason=False):
+        search_result = SearchResult(self, requirements)
+        search_result.found = False
         slots = {}
         for sub_block in self.sub_blocks:
-            slots[sub_block.ID] = sub_block.search_slots(requirements)
+            if return_reason:
+                sb_search_result = sub_block.search_slots(requirements, return_reason)
+                slots[sub_block.ID] = sb_search_result.slots
+                if sb_search_result.slots:
+                    search_result.found = True
+                for reason in sb_search_result.reason:
+                    search_result.reason.add(reason)
+        if return_reason:
+            search_result.slots = slots
+            return search_result
         return slots
 
     def set_unit(self, unit, slot):
@@ -426,15 +467,53 @@ class Unit:
         return self.score_advanced()
     
     def score_advanced(self):
+        allowed_numbers = {
+            "pf": {
+                "wasser": 2,
+                "si-mo": 1,
+                "flussbaden": 2,
+                "ausflug": 1,
+                "wanderung": 1,
+                "workshop": 2,
+                "sportaktivitat": 2,
+                "programmflache": 2,
+                "nacht": 4,
+                "wald": 6
+            },
+            "pi": {
+                "wasser": 2,
+                "si-mo": 1,
+                "flussbaden": 2,
+                "ausflug": 1,
+                "wanderung": 1,
+                "workshop": 2,
+                "sportaktivitat": 2,
+                "programmflache": 2,
+                "nacht": 4,
+                "wald": 6
+            },
+            "wo": {
+                "wasser": 1,
+                "si-mo": 0,
+                "flussbaden": 2,
+                "ausflug": 1,
+                "wanderung": 1,
+                "workshop": 1,
+                "sportaktivitat": 2,
+                "programmflache": 2,
+                "nacht": 2,
+                "wald": 3
+            }
+        }
         score = 0
         cf = 0
         for cat in self.prios_sorted:
-            for prio in self.prios_sorted[cat]:
-                
-                cf += prio["value"]
+            for ip, prio in enumerate(self.prios_sorted[cat]):
+                if ip < allowed_numbers[self.group][cat]:
+                    cf += prio["value"]
                 if self.has_block(prio["ID"]):
                     score += prio["value"]
-        return score / cf
+        return score / max(cf, 1)
 
     def score_sum_prios(self): 
         score = 0     
@@ -491,8 +570,9 @@ class Unit:
     # returns free slots for blocks
     # accounts for: need for visit day, 1d/2d hike, ...
     # accounts for block requirements (1 slot, 2 slots, ...)
-    def search_slots(self, block_req={}):
+    def search_slots(self, block_req={}, return_reason=False):
         slots = []
+        search_result = SearchResult(self, block_req)
         free_slots = self.schedule.free_slots()
         if free_slots:
             for iss, slot in enumerate(self.schedule.free_slots()):
@@ -500,10 +580,19 @@ class Unit:
                 for rule in self.rules:
                     if not rule(slot, self, block_req):
                         matching = False
+                        if return_reason:
+                            search_result.reason.add(f"Unit-rule '{rule.__name__}' not fulfilled")
                         break
                 if matching: slots.append(slot)
-            return slots
+            if return_reason:
+                search_result.slots = slots
+                return search_result
+            else:
+                return slots
         else:
+            if return_reason:
+                search_result.reason.add("Unit has free slots available")
+                return search_result
             return None
 
     def get_unmatched_prios(self):
@@ -585,20 +674,14 @@ class Unit:
             if not rule(self, block, slot):
                 return False
         return True
-    
-    # TODO sort prios by cat
-    # self.prios = {
-    #   "cat1": [block1_id, block2_id, ...],
-    #   "cat2": [block3_id, block4_id, ...],
-    #   ...
-    # }
+
 
     def sort_prios_by_cat(self):
         if not hasattr(self.allocation, "block_cats"): print("\033[1m\033[31mERR: call 'find_block_cats()' first\033[0m")
         prios = {}
         general = {}
+        wish = 0
         total = 0
-        possible = 0
         for ID, value in self.prios.items():
             if len(ID.split("-"))== 2:
                 cat = self.allocation.cat_map[ID]
@@ -620,8 +703,8 @@ class Unit:
                     prios[cat] = [{"ID": ID, "value": value}]
 
                 
-                total+= max(0, value)
-                possible += 3
+                wish += max(0, value)
+                total += 3
 
             else:
                 general[ID] = value
@@ -629,11 +712,16 @@ class Unit:
                     general["si-mo"] = value
                 
         for cat in prios.keys():
-            prios[cat] = sorted(prios[cat], key=lambda d : d["value"])
+            prios[cat] = sorted(prios[cat], key=lambda d : d["value"], reverse=True)
         
         self.prios_sorted = prios
         self.general = general
         
+        self.score_data = {
+            "wish": wish,
+            "total": total,
+            }
+
         if self.group == "pi":
             self.score_cf = total / 124  * self.more_or_less / 5
             if total < 50: 
@@ -673,7 +761,13 @@ class Unit:
                         s+= "\n"
         
         return s
-        
+    
+class SearchResult:
+    def __init__(self, author, additional_data):
+        self.author = author
+        self.additional_data = additional_data
+        self.slots = []
+        self.reason = set()
         
 
 class Allocation:
@@ -685,7 +779,7 @@ class Allocation:
         self.random = np.random
 
         self.append_block(
-            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6})
+            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6, "mix_units":False})
         )
 
     def evaluate(self, alloc_func):
@@ -733,11 +827,12 @@ class Allocation:
         print(f"ERROR: could not find Block with ID '{ID}'")
         return None
 
-    def get_unit_by_ID(self, ID):
+    def get_unit_by_ID(self, ID, print_error=True):
         for unit in self.UNITS:
             if unit.ID == ID:
                 return unit
-        print(f"ERROR: could not find Unit with ID '{ID}'")
+        if print_error:
+            print(f"ERROR: could not find Unit with ID '{ID}'")
         return None
     
     def append_block(self, block):
@@ -747,9 +842,10 @@ class Allocation:
     
     def append_unit(self, unit):
         if type(unit) != Unit: print(f"ERROR: type is not block but '{type(unit)}'"); return 0
-        if self.get_unit_by_ID(unit.ID): 
+        if self.get_unit_by_ID(unit.ID, print_error=False): 
             print(f"{YELLOW}WARN: unit with ID '{unit.ID}' already exists and is replaced{RESET}")
-            self.UNITS.remove(self.get_unit_by_ID(unit.ID))
+            input("Press Enter to continue...")
+            self.UNITS.remove(self.get_unit_by_ID(unit.ID, print_error=False))
         self.UNITS.append(unit)
         unit.allocation = self
         unit.sort_prios_by_cat()
@@ -779,7 +875,7 @@ class Allocation:
     def generate_block_series(self, base_id, count, data):
         mb = MetaBlock(base_id, data)
         for i in range(count):
-            block_id = f"{base_id}{chr(65+i)}"
+            block_id = f"{base_id}{i+1}"
             b = Block(
                     block_id,
                     data
@@ -945,6 +1041,16 @@ class Allocation:
             scores[i] = unit.score() 
             blocks[i] = len(unit.schedule.get_list())
         return scores, blocks
+    def print_stats(self):
+        s, b = self.stats() # scores, blocks assigned
+        hist, c = np.unique(b, return_counts=True)
+        for unit in self.UNITS:
+            print(f"{BLUE}{unit.ID:3}{RESET}: score={unit.score():6.4f}, blocks={len(unit.schedule.get_list()):3.0f}, tags={YELLOW}{', '.join(unit.tags)}{RESET}")
+        print(f"Scores: sum={s.sum():6.4f}, min={s.min():5.4f}, max={s.max():5.4f}, std={s.std():5.4f}")
+        print(f"Blocks assigned: min={b.min():3.0f}, max={b.max():3.0f}, std={b.std():5.2f}")
+        print("Block assignment histogram:")
+        for hi, h in enumerate(hist):
+            print(f"  {h:2.0f} blocks: {c[hi]:3.0f} units")
 
     def print_blocklist(self):
         for b in self.BLOCKS:

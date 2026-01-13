@@ -16,109 +16,140 @@ GREEN = "\033[32m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-
-def allocate_wanderungen(a): # TODO
-    a.UNITS = sorted(a.UNITS, key=lambda e: e.score())
-    for unit in a.UNITS:
-        if unit.general["wanderung"]:
-            hp = unit.get_highest_unmatched_by_cat("wanderung")
-            block = a.get_block_by_ID(hp["ID"])
-            block_slots = block.search_slots({"space": unit.n_people, "group": unit.group})
-            unit_slots = unit.search_slots({"cat": block.data["cat"]})
-            matching = Schedule.matching_slots(unit_slots, block_slots)
-            if matching:
-                unit.set_block(block, matching[0])
-
-
-def allocate_cat(a, cat):  
+def allocate_cat(a, cat, print_enabled=False):  
     for unit in a.UNITS:
         if unit.general[cat]:
             unmatched = unit.get_all_unmatched_by_cat(cat)
             if unmatched:
                 for prio in unmatched:
                     block = a.get_block_by_ID(prio["ID"])
-                    block_slots = block.search_slots({"space": unit.n_people, "group": unit.group})
-                    unit_slots = unit.search_slots({"cat": block.data["cat"]})
-                    matching = Schedule.matching_slots(unit_slots, block_slots)
-                    if matching:
-                        unit.set_block(block, matching[0])
+                    assigned = try_assign(unit, block, print_enabled)
+                    if assigned:
                         break
-                    else:
-                        print(f"{YELLOW}Could not assign {cat} {prio['ID']} to unit {unit.ID}{RESET}")
-
-def sort_by_score(a):
-    a.UNITS = sorted(a.UNITS, key=lambda e: e.score())
             
+def allocate_block(a, blockID, print_enabled=False):
+    block = a.get_block_by_ID(blockID)
+    for unit in a.UNITS: 
+        assigned = try_assign(unit, block, print_enabled)
 
-def allocate_amtli(allocation): # TODO
-    pass
+def allocate_block_vp_first(a, blockID, print_enabled=False):
+    block = a.get_block_by_ID(blockID)
+    a.UNITS = sorted(a.UNITS, key=lambda u: u.prios[block.ID], reverse=True)
+    for unit in a.UNITS:
+        if unit.prios.get(block.ID, 0) >= 0:
+            assigned = try_assign(unit, block, print_enabled)
 
-def allocate_dusche(allocation): # TODO
-    dusch_block = allocation.get_block_by_ID("OTH-DU")
-    for unit in allocation.UNITS:
-        block_slots = dusch_block.search_slots({"space": unit.n_people, "group": unit.group})
-        unit_slots = unit.search_slots(dusch_block.data)
-        matching = Schedule.matching_slots(unit_slots, block_slots)
-        if matching:
-            dusch_block.set_unit(unit, matching[0])
-        else:
-            print(f"{YELLOW}Could not assign 'dusche' to unit {unit.ID}{RESET}")
 
-def allocate_flussbaden(allocation): # TODO
+def allocate_flussbaden(allocation, print_enabled=False): # TODO
     for unit in allocation.UNITS:
         if unit.general["flussbaden"]:
             for ID in ["OFF-21", "OFF-22", "OFF-23"]:
                 block = allocation.get_block_by_ID(ID)  
-
-                block_slots = block.search_slots({"space": unit.n_people, "group": unit.group})
-                unit_slots = unit.search_slots(block.data)
-                matching = Schedule.matching_slots(unit_slots, block_slots)
-                if matching:
-                    block.set_unit(unit, matching[0])
+                assigned = try_assign(unit, block, print_enabled)
+                if assigned:
                     break
-                else:
-                    print(f"{YELLOW}Could not assign 'flussbaden' to unit {unit.ID}{RESET}")
-          
+     
+def try_assign(unit, block, print_enabled=False):
+    block_result = block.search_slots({"space": unit.n_people, "group": unit.group}, return_reason=True)
+    if not block_result.slots:
+        if print_enabled:
+            print(f"{YELLOW}No block-slots found for block {block.ID} and unit {unit.ID}{RESET}")# N={unit.n_people}, G={unit.group}")
+            print_reasons(block_result)
+        return False
+    unit_result = unit.search_slots(block.data, return_reason=True)
+    if not unit_result.slots:
+        if print_enabled:
+            print(f"{YELLOW}No unit-slots found for unit {unit.ID} and block {block.ID}{RESET}")
+            print_reasons(unit_result)
+        return False
+    matching = Schedule.matching_slots(unit_result.slots, block_result.slots)
+    if matching:
+        if "tags" in block.data and "sauber" in block.data["tags"]:
+            matching = calculate_sauber_distance(unit, matching)
+            # print(f"Matching slots with sauber distances: {matching}")
+            matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
 
-# ...
+        block.set_unit(unit, matching[0])
+        return True
+    else:
+        if print_enabled:
+            print(f"{YELLOW}No matching slots for block {block.ID} and unit {unit.ID}{RESET}")
+    return False
+
+def sort_by_score(a):
+    a.UNITS = sorted(a.UNITS, key=lambda e: e.score())
+
+def calculate_sauber_distance(unit, matching_slots):
+    matched_with_distances = []
+    for ms in matching_slots:
+        if type(ms) == dict:
+            slot = ms["slot"]
+        else:
+            slot = ms
+        mindist = 99
+        for entry in unit.schedule.get_list(with_slot=True):
+            if "tags" in entry["element"].data and "sauber" in entry["element"].data["tags"]:
+                mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - Schedule.to_idx(entry["slot"])[0]))
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - 0)) # distance to start
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - 13)) # distance to end
+        if type(ms) == dict:
+            ms["sauber_distance"] = mindist
+            matched_with_distances.append(ms)
+        else:
+            matched_with_distances.append({"slot": slot, "sauber_distance": mindist})
+    return matched_with_distances
+
 
 def abera_kadabera_simsalabim(allocation):
-    allocation.generate_block_series(
-        "OTH-DU", 
-        5, 
-        {
-            "fullname": "Dusche", 
-            "cat": "dusche", 
-            "js_type": "None", 
-            "space": 30, 
-            "length": 1, 
-            "group": ["wo", "pf", "pi"], 
-            "tags": set(["same_day"]), 
-            "on_times": [0, 1, 2, 3],
-            "on_days": [1, 2, 3, 4, 5, 7, 8, 9, 10, 11],
-            "verteilungsprio": 5
-        }
-    )
+    add_dusche_series(allocation)
+    add_amtli_series(allocation)
+    
     allocation.find_block_cats()
     # allocation.print_unitlist()
     # allocation.print_blocklist()
-    allocate_cat(allocation, "wanderung")  
-    sort_by_score(allocation) 
-    allocate_cat(allocation, "si-mo") 
-    sort_by_score(allocation) 
-    allocate_cat(allocation, "workshop") 
-    sort_by_score(allocation) 
-    allocate_cat(allocation, "sportaktivitat") 
-    sort_by_score(allocation) 
-    allocate_cat(allocation, "wasser")
-    sort_by_score(allocation) 
-    allocate_flussbaden(allocation)
 
-    allocate_dusche(allocation) 
+    # print(allocation.BLOCKS[5].__dict__); exit()
 
-    allocate_amtli(allocation)
-    # ...
-
+    allocate_cat(allocation, "wanderung", print_enabled=True)  
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "ausflug", print_enabled=True)  
+    sort_by_score(allocation)
+    allocate_cat(allocation, "si-mo",   print_enabled=True) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "workshop", print_enabled=True) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "sportaktivitat", print_enabled=True) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "wasser", print_enabled=True)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "workshop", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=True)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "wald", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "wald", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "wald", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "nacht", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "nacht", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_flussbaden(allocation, print_enabled=True)
+    sort_by_score(allocation)
+    allocate_flussbaden(allocation, print_enabled=True)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "programmflache", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "programmflache", print_enabled=True)
+    sort_by_score(allocation) 
+    allocate_block(allocation, "OTH-DU", print_enabled=True)
+    sort_by_score(allocation)
+    allocate_block(allocation, "OTH-DU", print_enabled=True)
+    allocate_block(allocation, "OTH-AM", print_enabled=True)
 
 def allocate_units(allocation):
     # the_magic_allocation_function(allocation)
@@ -136,9 +167,52 @@ def mp_worker(seed):
     run_eval = time.time() - stime
     allocation.log_stats("log.txt", run_eval)
     allocation.save("a1.json")
+    allocation.print_stats()
     write_to_xlsx(allocation, fname="alc1.xlsx")
 
     return allocation.stats()[0].sum()
+
+def print_reasons(search_result):
+    print(f" - " + "\n - ".join(search_result.reason))
+
+def add_dusche_series(allocation):
+    allocation.generate_block_series(
+        "OTH-DU", 
+        4, 
+        {
+            "fullname": "Dusche", 
+            "cat": "dusche", 
+            "js_type": "None", 
+            "space": 99, 
+            "length": 1, 
+            "group": ["wo", "pf", "pi"], 
+            "tags": set(["same_day"]), 
+            "on_times": [0, 1, 2, 3],
+            "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "verteilungsprio": 5,
+            "mix_units": False
+        }
+    )
+
+def add_amtli_series(allocation):
+    allocation.generate_block_series(
+        "OTH-AM", 
+        4, 
+        {
+            "fullname": "Amtli", 
+            "cat": "amtli", 
+            "js_type": "None", 
+            "space": 99, 
+            "length": 1, 
+            "group": ["wo", "pf", "pi"], 
+            "tags": set(["same_day"]), 
+            "on_times": [0, 1, 2],
+            "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "verteilungsprio": 5,
+            "mix_units": False
+        }
+    )
+
 
 seeds = range(1)
 
@@ -210,7 +284,5 @@ def more_magic_recursive_allocation_function(allocation):
         return "BACKTRACE"
         
     recursive_allocator(allocation, 0, 1)
-
-
 
 
