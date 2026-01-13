@@ -193,7 +193,7 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 print(f"{col:>20}: {df_.dtypes[col]}")
        
     tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
-    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende"]]
+    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende", "Betreuungsperson"]]
     tn_numbers = tn_numbers.astype({"ID": "string"}).set_index("ID")
 
     for df_ in [df_pi, df_pf, df_wo]:
@@ -201,9 +201,13 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             ID = str(int(df_.loc[i, "ID"]))
             data = {col: df_.loc[i, col] for col in df_.columns[1:]}
             data["group"] = data["group"][:2]
-            data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
-            data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
-
+            if tn_numbers.index.str.contains(ID).sum() == 0:
+                print(f"\033[33mWARNING: could not find unit {ID} in TN\033[0m")
+                data["n_people"] = -1
+                data["fullname"] = "UNKNOWN"
+            else:  
+                data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
+                data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
             allocation.append_unit(
                 Unit(
                     ID,
@@ -211,6 +215,11 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             )
         )
 
+    for row in tn_numbers.itertuples():
+        ID = row.Index
+        if all([ID != unit.ID for unit in allocation.UNITS]):
+            print(f"\033[33mWARNING: Unit {ID} is not in booking tool responses ({row.Betreuungsperson}).\033[0m")
+    input("Press Enter to continue...")
     print(f"Loaded {len(allocation.UNITS)} units.")
     
     
@@ -309,6 +318,10 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         tags = set()
         if "2 Einheiten" in bd.fullname:
             tags.add("2units")
+        mix_units = False
+        if not pd.isna(bd.mix_units):
+            if "2/3 Einheiten zusammen" in bd.mix_units:
+                mix_units = True
 
         allocation.append_block(
             Block(
@@ -319,11 +332,12 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
                     "cat":  cat,
                     "group": group,
                     "length": length,
-                    "on_days": [1, 2, 3, 4, 5, 7, 8, 9, 10, 11],
+                    "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
                     "on_times": on_times,
                     "tags": tags,
 
-                    "verteilungsprio": bd.verteilungsprio
+                    "verteilungsprio": bd.verteilungsprio,
+                    "mix_units": mix_units
                 }
             )
         )
@@ -369,6 +383,28 @@ def print_schedule(thing, save=False):
     else:
         plt.show()
 
+def print_block_geilheit(a):
+    counter = {}
+    for block in a.BLOCKS:
+        if "AUX" not in block.ID:
+            counter[block.ID] = 0
+
+    for unit in a.UNITS:
+        for ID, value in unit.prios.items():
+            if len(ID.split("-")) == 2 and "AUX" not in ID:
+                counter[ID] += value
+
+    x = range(len(counter.keys()))
+    y = counter.values()
+    labels = counter.keys()
+    plt.figure(figsize=(16, 5))
+    plt.bar(x, y, color="#00b48f")
+    plt.xticks(x, labels, rotation="vertical")
+    plt.ylabel("Summe Prio Punkte aller Einheiten")
+    plt.tight_layout()
+    plt.show()
+       
+
 def slot_to_xlsx_cell(slot):
     day, time = ord(slot[0]) - 65, int(slot[1])
     return f"{chr(day+1+65) + str(time+1 +2)}"
@@ -387,50 +423,98 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
         }
     )
 
+    group_colors = {
+        "wo": "#0db3bb",
+        "pf": "#9c8566",
+        "pi": "#c51f1f"
+    }
+    green_format = workbook.add_format({"font_color": "#00b48f"})
+    red_format = workbook.add_format({"font_color": "#f88589"})
+    blue_format = workbook.add_format({"font_color": "#608ee4"})
+    allocation.UNITS = sorted(allocation.UNITS, key=lambda e: e.ID) 
     for iu, unit in enumerate(allocation.UNITS):
         # unit = allocation.UNITS[0]
-        print(f"Writing unit {unit.ID} to xlsx...")
+        # print(f"Writing unit {unit.ID} to xlsx...")
         worksheet = workbook.add_worksheet(unit.ID)
-        worksheet.merge_range("B1:O1", unit.ID, merge_format)
+        worksheet.set_tab_color(group_colors[unit.group])
+    
+        worksheet.merge_range("B1:O1", f"{unit.ID}: {unit.fullname} ({unit.group})", merge_format)
         for i in range(1, SLOTS_PER_DAY +1):
             worksheet.write(f"A{i+2}", f"slot {i}")
         for i in range(DAYS):
-            worksheet.write(f"{chr(i+1+65)}2", f"day {i+1}")
+            worksheet.write(f"{chr(i+1+65)}2", f"{i+12}.07.")
 
-        for block in unit.schedule.get_list(id_only=True, with_slot=True):
-            worksheet.write(slot_to_xlsx_cell(block["slot"]), block["ID"])
+        for blocks in unit.schedule.get_time_list():
+            worksheet.write(slot_to_xlsx_cell(blocks["slot"]), "/".join(blocks["elements"]))
 
-    worksheet = workbook.add_worksheet("Freie Blöcke")
-    worksheet.merge_range("B1:O1", "Freie Blöcke", merge_format)
-    for i in range(1, SLOTS_PER_DAY +1):
-        worksheet.write(f"A{i+2}", f"slot {i}")
-    for i in range(DAYS):
-        worksheet.write(f"{chr(i+1+65)}2", f"day {i+1}")
+        row = 10
+        
+        for cat, prios in unit.prios_sorted.items():
+            worksheet.write(f"A{row}", cat)
+            row +=1
+            col = 1
+            for prio in prios:
+                if col > 4:
+                    col = 1
+                    row +=1
+                if prio["value"] >= 2 and unit.has_block(prio["ID"]):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", green_format)
+                elif prio["value"] >=2 and not unit.has_block(prio["ID"]):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", red_format)
+                elif prio["value"] <2 and unit.has_block(prio["ID"]):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", blue_format)
+                else:
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}")
+                col +=1
+            row+= 1
+    # worksheet = workbook.add_worksheet("Freie Blöcke")
+    # worksheet.merge_range("B1:O1", "Freie Blöcke", merge_format)
+    # for i in range(1, SLOTS_PER_DAY +1):
+    #     worksheet.write(f"A{i+2}", f"slot {i}")
+    # for i in range(DAYS):
+    #     worksheet.write(f"{chr(i+1+65)}2", f"day {i+1}")
 
-    for idd in range(DAYS):
-        for itt in range(SLOTS_PER_DAY):
-            cell = chr(idd + 1+65) + str(itt +3)
-            string = "=CONCATENATE(CONCATENATE("
-            for ib, block in enumerate(allocation.BLOCKS):
-                string += f'IF(${block.ID}.{cell} ="";CONCATENATE(${block.ID}.B1; CHAR(10));"");'
-                if ib == 63:
-                    string = string[:-1] + "); CONCATENATE("
+    # for idd in range(DAYS):
+    #     for itt in range(SLOTS_PER_DAY):
+    #         cell = chr(idd + 1+65) + str(itt +3)
+    #         string = "=CONCATENATE(CONCATENATE("
+    #         for ib, block in enumerate(allocation.BLOCKS):
+    #             string += f'IF(${block.ID}.{cell} ="";CONCATENATE(${block.ID}.B1; CHAR(10));"");'
+    #             if ib == 63:
+    #                 string = string[:-1] + "); CONCATENATE("
             
-            string = string[:-1]+"))"
-            worksheet.write(cell, string)   
-    
+    #         string = string[:-1]+"))"
+    #         worksheet.write(cell, string)   
+    cat_colors = {
+        "flussbaden": "#98b3e4",
+        "wasser": "#608ee4",
+        "si-mo": "#2052b0",
+        "sportaktivitat": "#c6464a",
+        "programmflache": "#f88589",
+        "ausflug": "#f2c966",
+        "workshop": "#e87928",
+        "wanderung": "#00b48f",
+        "nacht": "#094F41", 
+        "wald": "#49ebca",
+        "dusche": "#000000",
+        "amtli": "#000000",
+        "AUX": "#808080",
+        "anlass": "#000000"
+    }
     
     for ib, block in enumerate(allocation.BLOCKS):
         # unit = allocation.UNITS[0]
         worksheet = workbook.add_worksheet(block.ID)
-        worksheet.merge_range("B1:O1", block.ID, merge_format)
+        worksheet.set_tab_color(cat_colors[block.data["cat"]])
+        worksheet.merge_range("B1:O1", f"{block.ID}: {block.data['fullname']} ({block.data['cat']})", merge_format)
         for i in range(1, SLOTS_PER_DAY +1):
             worksheet.write(f"A{i+2}", f"slot {i}")
         for i in range(DAYS):
-            worksheet.write(f"{chr(i+1+65)}2", f"day {i+1}")
+            worksheet.write(f"{chr(i+1+65)}2", f"{i+12}.07.")
+        
 
-        for block in block.schedule.get_list(id_only=True, with_slot=True):
-            worksheet.write(slot_to_xlsx_cell(block["slot"]), block["ID"])
+        for units in block.schedule.get_time_list():
+            worksheet.write(slot_to_xlsx_cell(units["slot"]), "/".join(units["elements"]))
 
     workbook.close()
 
