@@ -393,6 +393,15 @@ def print_block_geilheit(a):
         for ID, value in unit.prios.items():
             if len(ID.split("-")) == 2 and "AUX" not in ID:
                 counter[ID] += value
+    
+    group_conter = {"pf": 0, "wo": 0, "pi": 0, "ro": 0}
+    for unit in a.UNITS:
+        group_conter[unit.group] +=1
+    
+    for block in a.BLOCKS:
+        if not "AUX" in block.ID:
+            allowed_units = sum([group_conter[gr] for gr in block.data["group"]])
+            counter[block.ID] /= allowed_units    
 
     x = range(len(counter.keys()))
     y = counter.values()
@@ -400,7 +409,7 @@ def print_block_geilheit(a):
     plt.figure(figsize=(16, 5))
     plt.bar(x, y, color="#00b48f")
     plt.xticks(x, labels, rotation="vertical")
-    plt.ylabel("Summe Prio Punkte aller Einheiten")
+    plt.ylabel("Durchschnitt Prio Punkte aller Einheiten")
     plt.tight_layout()
     plt.show()
        
