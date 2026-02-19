@@ -22,10 +22,11 @@ def allocate_cat(a, cat, print_enabled=False):
             unmatched = unit.get_all_unmatched_by_cat(cat)
             if unmatched:
                 for prio in unmatched:
-                    block = a.get_block_by_ID(prio["ID"])
-                    assigned = try_assign(unit, block, print_enabled)
-                    if assigned:
-                        break
+                    if prio["value"] >= 0:
+                        block = a.get_block_by_ID(prio["ID"])
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
             
 def allocate_block(a, blockID, print_enabled=False):
     block = a.get_block_by_ID(blockID)
@@ -83,18 +84,18 @@ def allocate_wanderung(allocation, print_enabled=False):
                         if assigned:
                             break
 
-    
+
 def get_zt_prios(unit):
     prios = []
     for prio in unit.prios_sorted["wanderung"]:
-        if prio["ID"] in ["OFF-17", "OFF-18", "OFF-19"]:
+        if prio["ID"] in ["OFF-17", "OFF-18", "OFF-19"] and prio["value"] >= 0:
             prios.append({"ID": prio["ID"], "value": prio["value"]})
     return sorted(prios, key=lambda e: e["value"], reverse=True)
 
 def get_et_prios(unit):
     prios = []
     for prio in unit.prios_sorted["wanderung"]:
-        if prio["ID"] in ["OFF-8", "OFF-9", "OFF-10", "OFF-11", "OFF-12", "OFF-13", "OFF-14", "OFF-15", "OFF-16"]:
+        if prio["ID"] in ["OFF-8", "OFF-9", "OFF-10", "OFF-11", "OFF-12", "OFF-13", "OFF-14", "OFF-15", "OFF-16"] and prio["value"] >= 0:
             prios.append({"ID": prio["ID"], "value": prio["value"]})
     return sorted(prios, key=lambda e: e["value"], reverse=True)  
 
@@ -154,6 +155,9 @@ def abera_kadabera_simsalabim(allocation):
     add_dusche_series(allocation)
     add_amtli_series(allocation)
     add_nacht_series(allocation)
+
+    twin_blocks(allocation, "ON-28", "ON-29")
+    twin_blocks(allocation, "ON-36", "ON-37")
     
     allocation.find_block_cats()
     # allocation.print_unitlist()
@@ -203,6 +207,8 @@ def abera_kadabera_simsalabim(allocation):
     sort_by_score(allocation)
     allocate_block(allocation, "OTH-DU", print_enabled=True)
     allocate_block(allocation, "OTH-AM", print_enabled=True)
+
+    # allocation.remve_KC_from_all_blocks() # remove KC from blocks, so that they can be assigned to other units if needed
 
 def allocate_units(allocation):
     # the_magic_allocation_function(allocation)
@@ -306,6 +312,12 @@ def add_pfadifun(allocation):
         if "pfadifun" in unit.general and unit.general["pfadifun"]:
             unit.set_block(block_pfadifun,block_pfadifun.data["on_slots"][0])
 
+def twin_blocks(allocation, blockID1, blockID2):
+    block1 = allocation.get_block_by_ID(blockID1)
+    block2 = allocation.get_block_by_ID(blockID2)
+    block1.twin_block = block2
+    block2.twin_block = block1
+  
 seeds = range(1)
 
 # with mp.Pool(processes=NUM_PROCESSES) as pool:

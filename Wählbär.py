@@ -17,7 +17,8 @@ BLUE = "\033[34m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
-KEEP_CLEAR = None
+KC_block = None
+KC_unit = None
 
 class Schedule: 
     def __init__(self, owner):
@@ -112,14 +113,20 @@ class Schedule:
         self.set_entry(block, slot)
         block.schedule.set_entry(self.owner, slot)
         for kc_slot in Schedule.next_N_slots(slot, block.data["length"] -1):
-            block.set_unit(KEEP_CLEAR, kc_slot)
+            block.set_unit(KC_block, kc_slot)
+        
+        if hasattr(block, "twin_block") and block.twin_block:
+            block.twin_block.schedule.set_entry(KC_unit, slot)
 
     # sets unit for block
     def set_unit(self, unit, slot):
         self.set_entry(unit, slot)
         unit.schedule.set_entry(self.owner, slot)
         for kc_slot in Schedule.next_N_slots(slot, self.owner.data["length"] -1):
-            unit.set_block(KEEP_CLEAR, kc_slot)
+            unit.set_block(KC_block, kc_slot)
+        
+        if hasattr(self.owner, "twin_block") and self.owner.twin_block:
+            self.owner.twin_block.schedule.set_entry(KC_unit, slot)
 
     def remove_entry(self, entry=None, slot=None):
         if type(entry) != Block and type(entry) != Unit:
@@ -356,10 +363,11 @@ class Block:
 
     def get_group_space(self, slot):
         if not self.schedule[slot]: 
-            return self.data["space"], ["wo", "pf", "pi"]
-        if "mix_groups" in self.data and self.data["mix_groups"]: 
-            return self.get_space(slot), ["wo", "pf", "pi"]
-        
+            if "hard_limit" in self.data and self.data["hard_limit"] == "Ja":
+                return self.data["space"], ["wo", "pf", "pi"]
+            else:
+                return 99, ["wo", "pf", "pi"] # returns 99 for first units, so that is only relevant when there are already units in the block
+    
         taken=0
         group = self.schedule[slot][0].group
         for unit in self.schedule[slot]:
@@ -844,8 +852,13 @@ class Allocation:
             Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6, "mix_units":False})
         )
 
-        global KEEP_CLEAR
-        KEEP_CLEAR = self.get_block_by_ID("AUX-KC")
+    
+
+        global KC_block
+        KC_block = self.get_block_by_ID("AUX-KC")
+        global KC_unit
+        KC_unit = Unit("KC", {"fullname": "KEEP CLEAR", "n_people": 0, "group":"wo", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []})
+
 
     def evaluate(self, alloc_func):
         # random.seed(self.seed)
@@ -891,6 +904,19 @@ class Allocation:
                 return block
         print(f"ERROR: could not find Block with ID '{ID}'")
         return None
+
+    def remve_KC_from_all_blocks(self):
+        for unit in self.UNITS:
+            for day in unit.schedule.calendar:
+                for time in day:
+                    if KC_block in time:
+                        time.remove(KC_block)
+        
+        for block in self.BLOCKS:
+            for day in block.schedule.calendar:
+                for time in day:
+                    if KC_unit in time:
+                        time.remove(KC_unit)
 
     def get_unit_by_ID(self, ID, print_error=True):
         for unit in self.UNITS:
