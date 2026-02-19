@@ -83,8 +83,8 @@ class Schedule:
             return None
         return day, time
 
-    
-    def idx2str(self, day, time):
+    @staticmethod
+    def idx2str(day, time):
         return chr(day+65)+str(time)
     
     
@@ -276,6 +276,11 @@ def on_days_unit(slot, self, unit_req):
 def on_times_unit(slot, self, unit_req):
     return False if "on_times" in unit_req and Schedule.to_idx(slot)[1] not in unit_req["on_times"] else True
 
+def on_slot(slot, self, unit_req):
+    if "on_slots" in self.data:
+        return slot in self.data["on_slots"]
+    return True
+
 def only_single_unit(slot, self, unit_req):
     if self.schedule[slot] and not self.data["mix_units"]:
         return False
@@ -285,6 +290,7 @@ def only_single_unit(slot, self, unit_req):
 BLOCK_RULES = [
     # has_space,
     # is_for_group,
+    on_slot,
     has_space_for_group,
     on_days_block,
     on_times_block,

@@ -111,6 +111,8 @@ def replace_text_in_document(doc, placeholder, replacement):
 def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx", print_enabled=False):
     full_labels = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=1).columns.tolist()
     df = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=2)
+    non_empty_count = df.iloc[:, 0].count() +1
+    df = df.head(non_empty_count)
 
     df.dropna(subset=["ID_all_int"], inplace=True)
 
@@ -193,6 +195,8 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 print(f"{col:>20}: {df_.dtypes[col]}")
        
     tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
+    non_empty_count = tn_numbers.iloc[:, 0].count() +1
+    tn_numbers = tn_numbers.head(non_empty_count)
     tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende", "Betreuungsperson", "Datum"]]
     tn_numbers = tn_numbers.astype({"ID": "string"}).set_index("ID")
 
@@ -234,6 +238,8 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
 
     # TODO: load unit list
     df = pd.read_excel(os.path.join(path, filename), sheet_name="On-Site Buchbar")
+    non_empty_count = df.iloc[:, 0].count() +1
+    df = df.head(non_empty_count)
     df = df[[
         'Block Nr.',
         'Kategorie', 
@@ -246,6 +252,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'Partizipation',
         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
         'geschätzte Anzahl Durchführungen',
+        'Durchführingszeiten (Start)',
 
         'Verteilungsprio'
     ]]
@@ -262,11 +269,14 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'mix_units',
         'max_durchfuhrungen',
         'est_durchfuhrungen',
+        'start_times',
 
         'verteilungsprio'
     ]
 
     df_offsite = pd.read_excel(os.path.join(path, filename), sheet_name="Off Site & Wasser")
+    non_empty_count = df_offsite.iloc[:, 0].count() + 1
+    df_offsite = df_offsite.head(non_empty_count)
     df_offsite = df_offsite[[
         'Block Nr.',
         'Off-Site', 
@@ -279,6 +289,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'Partizipation',
         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
         'geschätzte Anzahl Durchführungen',
+        'Durchführingszeiten (Start)',
 
         "Verteilungsprio"
 
@@ -296,6 +307,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'mix_units',
         'max_durchfuhrungen',
         'est_durchfuhrungen',
+        'start_times',
 
         'verteilungsprio'
     ]
@@ -315,8 +327,16 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         if bd.dauer == "2 Tage":
             length = 7
             on_times = [0]
+        
+        slots = []
+        if not pd.isna(bd.start_times):
+            start_array = bd.start_times.split(", ")
+            day = [int(e[:2]) - 12 for e in start_array]
+            time = [ord(e[2]) - 65 for e in start_array]
+            for i in range(len(day)):
+                slots.append(Schedule.idx2str(day[i], time[i]))
 
-        group = [e[:2].lower().replace("ö", "o") for e in bd.stufen.split(", ")]
+        group = [e[:2].lower().replace('ö', 'o') for e in bd.stufen.split(', ')]
 
         cat = bd.cat.lower().replace("ä", "a")
         if cat == "zweitageswanderung":
@@ -341,6 +361,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
                     "length": length,
                     "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
                     "on_times": on_times,
+                    "on_slots": slots,
                     "tags": tags,
 
                     "verteilungsprio": bd.verteilungsprio,
@@ -473,14 +494,14 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
                 if col > 4:
                     col = 1
                     row +=1
-                if prio["value"] >= 2 and unit.has_block(prio["ID"]):
-                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", green_format)
-                elif prio["value"] >=2 and not unit.has_block(prio["ID"]):
-                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", red_format)
-                elif prio["value"] <2 and unit.has_block(prio["ID"]):
-                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}", blue_format)
+                if prio['value'] >= 2 and unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", green_format)
+                elif prio['value'] >=2 and not unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", red_format)
+                elif prio['value'] <2 and unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", blue_format)
                 else:
-                    worksheet.write(f"{chr(col+65)}{row}", f"{prio["ID"]}: {prio["value"]}")
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}")
                 col +=1
             row+= 1
     # worksheet = workbook.add_worksheet("Freie Blöcke")

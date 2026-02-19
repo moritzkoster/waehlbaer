@@ -109,7 +109,7 @@ def abera_kadabera_simsalabim(allocation):
     # allocation.print_blocklist()
 
     # print(allocation.BLOCKS[5].__dict__); exit()
-
+    add_freizeit(allocation)
     allocate_cat(allocation, "wanderung", print_enabled=True)  
     sort_by_score(allocation) 
     allocate_cat(allocation, "ausflug", print_enabled=True)  
@@ -212,6 +212,15 @@ def add_amtli_series(allocation):
             "mix_units": False
         }
     )
+
+
+def add_freizeit(allocation):
+    block_freizeit = allocation.get_block_by_ID("ON-39")
+    for unit in allocation.UNITS:
+        if Schedule.to_idx(block_freizeit.data["on_slots"][0])[0] in unit.present_on:
+            unit.set_block(block_freizeit,block_freizeit.data["on_slots"][0])
+        if Schedule.to_idx(block_freizeit.data["on_slots"][1])[0] in unit.present_on:
+            unit.set_block(block_freizeit,block_freizeit.data["on_slots"][1])
 
 
 seeds = range(1)
