@@ -90,8 +90,9 @@ def calculate_sauber_distance(unit, matching_slots):
         for entry in unit.schedule.get_list(with_slot=True):
             if "tags" in entry["element"].data and "sauber" in entry["element"].data["tags"]:
                 mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - Schedule.to_idx(entry["slot"])[0]))
-        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - 0)) # distance to start
-        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - 13)) # distance to end
+        
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - unit.present_on[0])) # distance to start
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - unit.present_on[-1])) # distance to end
         if type(ms) == dict:
             ms["sauber_distance"] = mindist
             matched_with_distances.append(ms)
