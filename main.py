@@ -160,6 +160,7 @@ def abera_kadabera_simsalabim(allocation):
 
     # print(allocation.BLOCKS[5].__dict__); exit()
     add_freizeit(allocation)
+    add_pfadifun(allocation)
     # allocate_cat(allocation, "wanderung", print_enabled=True)
     allocate_wanderung(allocation, print_enabled=True)
     sort_by_score(allocation) 
@@ -264,7 +265,6 @@ def add_amtli_series(allocation):
         }
     )
 
-
 def add_freizeit(allocation):
     block_freizeit = allocation.get_block_by_ID("ON-39")
     block_freizeit.data["tags"].add("same_day")
@@ -274,6 +274,13 @@ def add_freizeit(allocation):
         if Schedule.to_idx(block_freizeit.data["on_slots"][1])[0] in unit.present_on:
             unit.set_block(block_freizeit,block_freizeit.data["on_slots"][1])
 
+def add_pfadifun(allocation):
+    block_pfadifun = allocation.get_block_by_ID("ON-01")
+    block_pfadifun.data["tags"].add("same_day")
+    
+    for unit in allocation.UNITS:
+        if "pfadifun" in unit.general and unit.general["pfadifun"]:
+            unit.set_block(block_pfadifun,block_pfadifun.data["on_slots"][0])
 
 seeds = range(1)
 

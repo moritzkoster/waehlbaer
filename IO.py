@@ -322,13 +322,13 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         
         length = 1
         on_times = [0, 1, 2]
-        if bd.dauer == "4h": 
+        if bd.dauer == "4 h": 
             length = 2
             on_times = [1]
-        if bd.dauer == "6h": 
+        if bd.dauer == "6 h": 
             length = 3
             on_times = [0]
-        if bd.dauer == "8h":
+        if bd.dauer == "8 h":
             length = 3
             on_times = [0]
         if bd.dauer == "2 Tage":
