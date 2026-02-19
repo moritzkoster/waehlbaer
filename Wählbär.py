@@ -205,7 +205,7 @@ def no_two_water_in_same_week(slot, self, block_req):
             for block in time:
                 if block.data["cat"] == "wasser":
                     return False 
-        return True   
+    return True   
     
 def no_two_workshops_in_same_week(slot, self, block_req):
     if block_req["cat"] != "workshop": return True
@@ -220,11 +220,31 @@ def no_two_workshops_in_same_week(slot, self, block_req):
             for block in time:
                 if block.data["cat"] == "workshop":
                     return False 
-        return True 
+    return True 
+
+def no_two_shower_in_same_week(slot, self, block_req):
+    if block_req["cat"] != "dusche": return True
+
+    if Schedule.to_idx(slot)[0] < 7:
+        test_days = range(1, 6+1)
+    else:
+        test_days = range(8, 12+1)
+    for idd in test_days:
+        day = self.schedule.calendar[idd]
+        for iss, time in enumerate(day):
+            for block in time:
+                if block.data["cat"] == "dusche":
+                    return False 
+    return True 
+
+def is_present(slot, self, blockdata):
+    return Schedule.to_idx(slot)[0] in self.present_on
 
 UNIT_RULES = [
     # soft_assign_musthave_blocks,/
-    no_two_on_same_day#,
+    no_two_on_same_day,
+    is_present,
+    no_two_shower_in_same_week
     # no_two_water_in_same_week,
     # no_two_workshops_in_same_week
 ]
@@ -434,6 +454,7 @@ class Unit:
         self.group = data["group"].lower().replace("ö", "o"); del data["group"]
         self.more_or_less = data["more_or_less"]; del data["more_or_less"]
         self.wasser_anerk = data["wasser_anerk"]; del data["wasser_anerk"]
+        self.present_on = data["present_on"]; del data["present_on"]
 
         self.prios = data
         self.prios_sorted = None

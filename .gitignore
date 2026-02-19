@@ -1,7 +1,7 @@
 saves/*
 __pycache__*
 **log**
-test.py
+# test.py
 .venv
-/exports
-/data
+exports/*
+data/*

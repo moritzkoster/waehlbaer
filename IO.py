@@ -193,7 +193,7 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 print(f"{col:>20}: {df_.dtypes[col]}")
        
     tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
-    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende", "Betreuungsperson"]]
+    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende", "Betreuungsperson", "Datum"]]
     tn_numbers = tn_numbers.astype({"ID": "string"}).set_index("ID")
 
     for df_ in [df_pi, df_pf, df_wo]:
@@ -208,6 +208,13 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             else:  
                 data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
                 data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
+            if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
+                data["present_on"] = [e-12 for e in range(13, 26)] # -12 to convert to wählbär day (12.7. is Day 0)
+            if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
+                data["present_on"] = [e-12 for e in range(13, 19)]
+            if tn_numbers.loc[ID, "Datum"] == "20.-25. Juli 2026":
+                data["present_on"] = [e-12 for e in range(20, 25)]
+
             allocation.append_unit(
                 Unit(
                     ID,
