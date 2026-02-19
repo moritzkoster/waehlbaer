@@ -286,11 +286,17 @@ def only_single_unit(slot, self, unit_req):
         return False
     return True
 
+def is_blocked(slot, self, unit_req):
+    if "state" in self.data and self.data["state"] == "Gesperrt":
+        return False
+    else:
+        return True
 
 BLOCK_RULES = [
     # has_space,
     # is_for_group,
     on_slot,
+    is_blocked,
     has_space_for_group,
     on_days_block,
     on_times_block,

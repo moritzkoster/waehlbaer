@@ -217,6 +217,7 @@ def add_amtli_series(allocation):
 
 def add_freizeit(allocation):
     block_freizeit = allocation.get_block_by_ID("ON-39")
+    block_freizeit.data["tags"].add("same_day")
     for unit in allocation.UNITS:
         if Schedule.to_idx(block_freizeit.data["on_slots"][0])[0] in unit.present_on:
             unit.set_block(block_freizeit,block_freizeit.data["on_slots"][0])

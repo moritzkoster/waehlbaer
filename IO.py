@@ -242,6 +242,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
     df = df.head(non_empty_count)
     df = df[[
         'Block Nr.',
+        'Status',
         'Kategorie', 
         'Titel',
         'Programmstruktur', 
@@ -259,6 +260,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
 
     df.columns = [
         'ID',
+        'state',
         'cat', 
         'fullname',
         'betr_unbetr', 
@@ -279,6 +281,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
     df_offsite = df_offsite.head(non_empty_count)
     df_offsite = df_offsite[[
         'Block Nr.',
+        'Status',
         'Off-Site', 
         'Block- Titel',
         'Programmstruktur', 
@@ -297,6 +300,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
 
     df_offsite.columns = [
         'ID',
+        'state',
         'cat', 
         'fullname',
         'betr_unbetr', 
