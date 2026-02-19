@@ -17,6 +17,7 @@ BLUE = "\033[34m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+KEEP_CLEAR = None
 
 class Schedule: 
     def __init__(self, owner):
@@ -24,7 +25,7 @@ class Schedule:
         self.owner = owner
 
     def __getitem__(self, ipt):
-        day, time = self.to_idx(ipt)
+        day, time = Schedule.to_idx(ipt)
         return self.calendar[day][time]
     
     def clear(self):
@@ -86,8 +87,23 @@ class Schedule:
     @staticmethod
     def idx2str(day, time):
         return chr(day+65)+str(time)
-    
-    
+
+    @staticmethod
+    def next_N_slots(ipt, N=1):
+        day, time = Schedule.to_idx(ipt)
+        slots = []
+        for i in range(1, N+1):
+            time += 1
+            if time >= SLOTS_PER_DAY:
+                time = 0
+                day += 1
+            
+            if day >= DAYS:
+                print("ERROR: no next slots available")
+            else:
+                slots.append(Schedule.idx2str(day, time))
+        return slots
+
     def set_entry(self, entry, slot):
         self[slot].append(entry)
   
@@ -95,11 +111,15 @@ class Schedule:
     def set_block(self, block, slot):
         self.set_entry(block, slot)
         block.schedule.set_entry(self.owner, slot)
+        for kc_slot in Schedule.next_N_slots(slot, block.data["length"] -1):
+            block.set_unit(KEEP_CLEAR, kc_slot)
 
     # sets unit for block
     def set_unit(self, unit, slot):
         self.set_entry(unit, slot)
         unit.schedule.set_entry(self.owner, slot)
+        for kc_slot in Schedule.next_N_slots(slot, self.owner.data["length"] -1):
+            unit.set_block(KEEP_CLEAR, kc_slot)
 
     def remove_entry(self, entry=None, slot=None):
         if type(entry) != Block and type(entry) != Unit:
@@ -240,11 +260,20 @@ def no_two_shower_in_same_week(slot, self, block_req):
 def is_present(slot, self, blockdata):
     return Schedule.to_idx(slot)[0] in self.present_on
 
+def long_blocks(slot, self, blockdata):
+    next_slots = Schedule.next_N_slots(slot, N=blockdata["length"]-1)
+    # print(last_6_slots, slot)
+    for i, slot in enumerate(next_slots):
+        if self.schedule[slot]:
+            return False
+    return True
+
 UNIT_RULES = [
     # soft_assign_musthave_blocks,/
     no_two_on_same_day,
     is_present,
-    no_two_shower_in_same_week
+    no_two_shower_in_same_week,
+    long_blocks
     # no_two_water_in_same_week,
     # no_two_workshops_in_same_week
 ]
@@ -814,6 +843,9 @@ class Allocation:
         self.append_block(
             Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6, "mix_units":False})
         )
+
+        global KEEP_CLEAR
+        KEEP_CLEAR = self.get_block_by_ID("AUX-KC")
 
     def evaluate(self, alloc_func):
         # random.seed(self.seed)

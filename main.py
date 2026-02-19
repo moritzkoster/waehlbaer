@@ -48,7 +48,56 @@ def allocate_flussbaden(allocation, print_enabled=False): # TODO
                 assigned = try_assign(unit, block, print_enabled)
                 if assigned:
                     break
-     
+
+def allocate_wanderung(allocation, print_enabled=False):
+    for unit in allocation.UNITS:
+        if unit.general["wanderung"]:
+            
+            assigned = False
+            if "ein_zwei" in unit.general and unit.general["ein_zwei"] == "Zweitageswanderung":
+                zt_prios = get_zt_prios(unit)
+                for prio in zt_prios:
+                    block = allocation.get_block_by_ID(prio["ID"])  
+                    assigned = try_assign(unit, block, print_enabled)
+                    if assigned:
+                        break
+                if not assigned:
+                    et_prios = get_et_prios(unit)
+                    for prio in et_prios:
+                        block = allocation.get_block_by_ID(prio["ID"])  
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
+            else:
+                et_prios = get_et_prios(unit)
+                for prio in et_prios:
+                    block = allocation.get_block_by_ID(prio["ID"])  
+                    assigned = try_assign(unit, block, print_enabled)
+                    if assigned:
+                        break
+                if not assigned:
+                    zt_prios = get_zt_prios(unit)
+                    for prio in zt_prios:
+                        block = allocation.get_block_by_ID(prio["ID"])  
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
+
+    
+def get_zt_prios(unit):
+    prios = []
+    for prio in unit.prios_sorted["wanderung"]:
+        if prio["ID"] in ["OFF-17", "OFF-18", "OFF-19"]:
+            prios.append({"ID": prio["ID"], "value": prio["value"]})
+    return sorted(prios, key=lambda e: e["value"], reverse=True)
+
+def get_et_prios(unit):
+    prios = []
+    for prio in unit.prios_sorted["wanderung"]:
+        if prio["ID"] in ["OFF-8", "OFF-9", "OFF-10", "OFF-11", "OFF-12", "OFF-13", "OFF-14", "OFF-15", "OFF-16"]:
+            prios.append({"ID": prio["ID"], "value": prio["value"]})
+    return sorted(prios, key=lambda e: e["value"], reverse=True)  
+
 def try_assign(unit, block, print_enabled=False):
     block_result = block.search_slots({"space": unit.n_people, "group": unit.group}, return_reason=True)
     if not block_result.slots:
@@ -111,7 +160,8 @@ def abera_kadabera_simsalabim(allocation):
 
     # print(allocation.BLOCKS[5].__dict__); exit()
     add_freizeit(allocation)
-    allocate_cat(allocation, "wanderung", print_enabled=True)  
+    # allocate_cat(allocation, "wanderung", print_enabled=True)
+    allocate_wanderung(allocation, print_enabled=True)
     sort_by_score(allocation) 
     allocate_cat(allocation, "ausflug", print_enabled=True)  
     sort_by_score(allocation)
@@ -140,8 +190,8 @@ def abera_kadabera_simsalabim(allocation):
     allocate_cat(allocation, "nacht", print_enabled=True)
     sort_by_score(allocation)
     allocate_flussbaden(allocation, print_enabled=True)
-    sort_by_score(allocation)
-    allocate_flussbaden(allocation, print_enabled=True)
+    # sort_by_score(allocation)
+    # allocate_flussbaden(allocation, print_enabled=True) # Only one flussbaden block
     sort_by_score(allocation) 
     allocate_cat(allocation, "programmflache", print_enabled=True)
     sort_by_score(allocation)
