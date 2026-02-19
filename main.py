@@ -153,6 +153,7 @@ def calculate_sauber_distance(unit, matching_slots):
 def abera_kadabera_simsalabim(allocation):
     add_dusche_series(allocation)
     add_amtli_series(allocation)
+    add_nacht_series(allocation)
     
     allocation.find_block_cats()
     # allocation.print_unitlist()
@@ -245,6 +246,29 @@ def add_dusche_series(allocation):
             "mix_units": False
         }
     )
+
+def add_nacht_series(allocation):
+    main_block = allocation.get_block_by_ID("ON-05")
+    allocation.BLOCKS.remove(main_block)
+    allocation.generate_block_series(
+        "ON-05",
+        10,
+        {
+            'fullname': 'Nachtaktivität (22:00-24:00)',
+            'space': 60.0,
+            'js_type': 'LP',
+            'cat': 'programmflache',
+            'group': ['wo', 'pf', 'pi'],
+            'length': 1,
+            'on_days': [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            'on_times': [0, 1, 2],
+            'on_slots': ['C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4', 'K4', 'L4'],
+            'tags': set(),
+            'verteilungsprio': '1: zuerst verteilen',
+            'mix_units': False
+        } 
+    )
+
 
 def add_amtli_series(allocation):
     allocation.generate_block_series(
