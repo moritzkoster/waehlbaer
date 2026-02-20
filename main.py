@@ -50,6 +50,18 @@ def allocate_flussbaden(allocation, print_enabled=False): # TODO
                 if assigned:
                     break
 
+def allocate_nacht(allocation, print_enabled=False):
+    block = allocation.get_block_by_ID("ON-05")  
+    for unit in allocation.UNITS:
+        if not unit.is_nacht_satisfied():
+            assigned = try_assign(unit, block, print_enabled)
+
+def allocate_wald(allocation, print_enabled=False):
+    block = allocation.get_block_by_ID("ON-08")  
+    for unit in allocation.UNITS:
+        if not unit.is_wald_satisfied():
+            assigned = try_assign(unit, block, print_enabled)
+
 def allocate_wanderung(allocation, print_enabled=False):
     for unit in allocation.UNITS:
         if unit.general["wanderung"]:
@@ -155,6 +167,7 @@ def abera_kadabera_simsalabim(allocation):
     add_dusche_series(allocation)
     add_amtli_series(allocation)
     add_nacht_series(allocation)
+    add_wald_series(allocation)
 
     twin_blocks(allocation, "ON-28", "ON-29")
     twin_blocks(allocation, "ON-36", "ON-37")
@@ -185,15 +198,17 @@ def abera_kadabera_simsalabim(allocation):
     sort_by_score(allocation)
     allocate_cat(allocation, "sportaktivitat", print_enabled=True)
     sort_by_score(allocation) 
-    allocate_cat(allocation, "wald", print_enabled=True)
+    allocate_wald(allocation, print_enabled=True)
     sort_by_score(allocation)
-    allocate_cat(allocation, "wald", print_enabled=True)
+    allocate_wald(allocation, print_enabled=True)
     sort_by_score(allocation)
-    allocate_cat(allocation, "wald", print_enabled=True)
+    allocate_wald(allocation, print_enabled=True)
     sort_by_score(allocation)
-    allocate_cat(allocation, "nacht", print_enabled=True)
+    allocate_wald(allocation, print_enabled=True)
     sort_by_score(allocation)
-    allocate_cat(allocation, "nacht", print_enabled=True)
+    allocate_nacht(allocation, print_enabled=True)
+    sort_by_score(allocation)
+    allocate_nacht(allocation, print_enabled=True)
     sort_by_score(allocation)
     allocate_flussbaden(allocation, print_enabled=True)
     # sort_by_score(allocation)
@@ -256,23 +271,35 @@ def add_dusche_series(allocation):
 def add_nacht_series(allocation):
     main_block = allocation.get_block_by_ID("ON-05")
     allocation.BLOCKS.remove(main_block)
+    main_block.data["tags"].add("same_day")
     allocation.generate_block_series(
         "ON-05",
         10,
-        {
-            'fullname': 'Nachtaktivität (22:00-24:00)',
-            'space': 60.0,
-            'js_type': 'LP',
-            'cat': 'programmflache',
-            'group': ['wo', 'pf', 'pi'],
-            'length': 1,
-            'on_days': [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
-            'on_times': [0, 1, 2],
-            'on_slots': ['C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4', 'K4', 'L4'],
-            'tags': set(),
-            'verteilungsprio': '1: zuerst verteilen',
-            'mix_units': False
-        } 
+        main_block.data
+        # {
+        #     'fullname': 'Nachtaktivität (22:00-24:00)',
+        #     'space': 60.0,
+        #     'js_type': 'LP',
+        #     'cat': 'programmflache',
+        #     'group': ['wo', 'pf', 'pi'],
+        #     'length': 1,
+        #     'on_days': [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+        #     'on_times': [0, 1, 2],
+        #     'on_slots': ['C4', 'D4', 'E4', 'F4', 'G4', 'H4', 'I4', 'J4', 'K4', 'L4'],
+        #     'tags': set(),
+        #     'verteilungsprio': '1: zuerst verteilen',
+        #     'mix_units': False
+        # } 
+    )
+
+def add_wald_series(allocation):
+    main_block = allocation.get_block_by_ID("ON-08")
+    allocation.BLOCKS.remove(main_block)
+    main_block.data["tags"].add("same_day")
+    allocation.generate_block_series(
+        "ON-08",
+        10,
+        main_block.data
     )
 
 

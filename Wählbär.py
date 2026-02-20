@@ -531,6 +531,20 @@ class Unit:
         print("ERROR: block not in Prio")
         return NRANKS
     
+    def is_nacht_satisfied(self):
+        count = 0
+        for block in self.schedule.get_list():
+            if block.ID == "ON-05":
+                count += 1
+        return count >= self.general["nacht"] * (1 if self.group == "wo" else 2)
+
+    def is_wald_satisfied(self):
+        count = 0
+        for block in self.schedule.get_list():
+            if block.ID == "ON-08":
+                count += 1
+        return count >= self.general["wald"] * (1 if self.group == "wo" else 2)
+    
     # define how the score is calculated 
     # TODO: Is this the Way???
     def score(self):
@@ -966,7 +980,12 @@ class Allocation:
     def generate_block_series(self, base_id, count, data):
         mb = MetaBlock(base_id, data)
         for i in range(count):
-            block_id = f"{base_id}{i+1}"
+
+            if base_id[-1] in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]: 
+                block_id = f"{base_id}{chr(i+65)}"
+            else:
+                block_id = f"{base_id}{i+1}"
+                
             b = Block(
                     block_id,
                     data

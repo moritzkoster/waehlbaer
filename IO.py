@@ -325,7 +325,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
     for bd in df.itertuples():
         
         length = 1
-        on_times = [0, 1, 2]
+        on_times = [0, 1, 2, 3, 4]
         if bd.dauer == "4 h": 
             length = 2
             on_times = [1]
