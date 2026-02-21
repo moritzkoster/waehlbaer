@@ -249,20 +249,58 @@ def no_two_workshops_in_same_week(slot, self, block_req):
                     return False 
     return True 
 
-def no_two_shower_in_same_week(slot, self, block_req):
-    if block_req["cat"] != "dusche": return True
+# def no_two_shower_in_same_week(slot, self, block_req):
+#     if block_req["cat"] != "dusche": return True
+
+#     if Schedule.to_idx(slot)[0] < 7:
+#         test_days = range(1, 6+1)
+#     else:
+#         test_days = range(8, 12+1)
+#     for idd in test_days:
+#         day = self.schedule.calendar[idd]
+#         for iss, time in enumerate(day):
+#             for block in time:
+#                 if block.data["cat"] == "dusche":
+#                     return False 
+#     return True 
+
+def max_per_week(slot, self, block_req):
+    if block_req["cat"] not in ["wald", "nacht" , "dusche"]: return True
 
     if Schedule.to_idx(slot)[0] < 7:
         test_days = range(1, 6+1)
     else:
         test_days = range(8, 12+1)
+    count = 0
     for idd in test_days:
         day = self.schedule.calendar[idd]
         for iss, time in enumerate(day):
             for block in time:
-                if block.data["cat"] == "dusche":
-                    return False 
-    return True 
+                if block.data["cat"] == block_req["cat"]:
+                    count += 1
+
+    max_counts_per_week = {
+        "wald": 3,
+        "nacht": 2,
+        "dusche": 1
+    }
+
+    return count < max_counts_per_week[block_req["cat"]]
+
+def max_per_day(slot, self, block_req):
+    if block_req["cat"] not in ["wald"]: return True
+    count = 0
+    for time in self.schedule.calendar[Schedule.to_idx(slot)[0]]:
+        for block in time:
+            if block.data["cat"] == block_req["cat"]:
+                count += 1
+
+    max_counts_per_day = {
+        "wald": 1
+    }
+
+    return count < max_counts_per_day[block_req["cat"]]
+    
 
 def is_present(slot, self, blockdata):
     return Schedule.to_idx(slot)[0] in self.present_on
@@ -272,6 +310,8 @@ def long_blocks(slot, self, blockdata):
     # print(last_6_slots, slot)
     for i, slot in enumerate(next_slots):
         if self.schedule[slot]:
+            if blockdata["ID"] in ["OFF-17", "OFF-18", "OFF-19"] and  self.schedule[slot][0].ID == "ON-39": # OVERRIDE zweitageswanderung darf während freizeit sein
+                continue
             return False
     return True
 
@@ -279,7 +319,9 @@ UNIT_RULES = [
     # soft_assign_musthave_blocks,/
     no_two_on_same_day,
     is_present,
-    no_two_shower_in_same_week,
+    # no_two_shower_in_same_week,
+    max_per_week,
+    max_per_day,
     long_blocks
     # no_two_water_in_same_week,
     # no_two_workshops_in_same_week
@@ -354,6 +396,8 @@ class Block:
             self.data["tags"].add("nass")
         if self.data["cat"] in ["wasser", "dusche"]:
             self.data["tags"].add("sauber")
+
+        self.is_active = data["state"] != "Gesperrt"
 
     def get_space(self, slot):
         taken = 0
@@ -534,14 +578,14 @@ class Unit:
     def is_nacht_satisfied(self):
         count = 0
         for block in self.schedule.get_list():
-            if block.ID == "ON-05":
+            if block.data["cat"] == "nacht":
                 count += 1
         return count >= self.general["nacht"] * (1 if self.group == "wo" else 2)
 
     def is_wald_satisfied(self):
         count = 0
         for block in self.schedule.get_list():
-            if block.ID == "ON-08":
+            if block.data["cat"] == "wald":
                 count += 1
         return count >= self.general["wald"] * (1 if self.group == "wo" else 2)
     
@@ -862,14 +906,9 @@ class Allocation:
         self.seed = seed
         self.random = np.random
 
-        self.append_block(
-            Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "tags": set(), "verteilungsprio": 6, "mix_units":False})
-        )
-
-    
-
         global KC_block
-        KC_block = self.get_block_by_ID("AUX-KC")
+        KC_block = Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False})
+
         global KC_unit
         KC_unit = Unit("KC", {"fullname": "KEEP CLEAR", "n_people": 0, "group":"wo", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []})
 

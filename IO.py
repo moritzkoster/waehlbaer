@@ -13,6 +13,17 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import xlsxwriter as xls
 
+class FORMAT:
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    GREEN = "\033[32m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+
+   
+
+
 def slot_to_table_idx(slot):
     if type(slot) == str:
         idx = Schedule.to_idx(slot)
@@ -213,11 +224,11 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
                 data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
             if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
-                data["present_on"] = [e-12 for e in range(13, 26)] # -12 to convert to wählbär day (12.7. is Day 0)
+                data["present_on"] = [e-12 for e in range(12, 25+1)] # -12 to convert to wählbär day (12.7. is Day 0)
             if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
-                data["present_on"] = [e-12 for e in range(13, 19)]
+                data["present_on"] = [e-12 for e in range(13, 18+1)]
             if tn_numbers.loc[ID, "Datum"] == "20.-25. Juli 2026":
-                data["present_on"] = [e-12 for e in range(20, 25)]
+                data["present_on"] = [e-12 for e in range(20, 25+1)]
 
             allocation.append_unit(
                 Unit(
@@ -364,7 +375,9 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         allocation.append_block(
             Block(
                 bd.ID,
-                {   "fullname": bd.fullname,
+                {   
+                    "ID": bd.ID,
+                    "fullname": bd.fullname,
                     "space": bd.gruppengroesse,
                     "hard_limit": bd.hard_limit,
                     "js_type": bd.blockart_J_S,
@@ -375,6 +388,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
                     "on_times": on_times,
                     "on_slots": slots,
                     "tags": tags,
+                    "state": bd.state,
 
                     "verteilungsprio": bd.verteilungsprio,
                     "mix_units": mix_units
@@ -496,8 +510,21 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
         for blocks in unit.schedule.get_time_list():
             worksheet.write(slot_to_xlsx_cell(blocks["slot"]), "/".join(blocks["elements"]))
 
-        row = 10
+        row = 10; col = 0
+
+        worksheet.write(f"{chr(col+65)}{row}", "info"); row+=1; col+=1
+        worksheet.write(f"{chr(col+65)}{row}", f"n_people: {unit.n_people}"); col+=1
         
+        row +=1; col = 0
+        worksheet.write(f"{chr(col+65)}{row}", "general"); row+=1; col+=1
+        for key, value in unit.general.items():
+            if col > 8:
+                col = 1
+                row +=1
+            worksheet.write(f"{chr(col+65)}{row}", f"{key}:"); col+=1
+            worksheet.write(f"{chr(col+65)}{row}", f"{value}"); col+=1
+        
+        row+=1; col = 0
         for cat, prios in unit.prios_sorted.items():
             worksheet.write(f"A{row}", cat)
             row +=1
@@ -545,16 +572,20 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
         "wanderung": "#00b48f",
         "nacht": "#094F41", 
         "wald": "#49ebca",
-        "dusche": "#000000",
-        "amtli": "#000000",
+        "dusche": "#673B80",
+        "amtli": "#673B80",
         "AUX": "#808080",
-        "anlass": "#000000"
+        "anlass": "#673B80"
     }
     
     for ib, block in enumerate(allocation.BLOCKS):
         # unit = allocation.UNITS[0]
+
         worksheet = workbook.add_worksheet(block.ID)
-        worksheet.set_tab_color(cat_colors[block.data["cat"]])
+        if block.is_active:
+            worksheet.set_tab_color(cat_colors[block.data["cat"]])
+        else:
+            worksheet.set_tab_color("#808080")
         worksheet.merge_range("B1:O1", f"{block.ID}: {block.data['fullname']} ({block.data['cat']})", merge_format)
         for i in range(1, SLOTS_PER_DAY +1):
             worksheet.write(f"A{i+2}", f"slot {i}")
@@ -564,6 +595,13 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
 
         for units in block.schedule.get_time_list():
             worksheet.write(slot_to_xlsx_cell(units["slot"]), "/".join(units["elements"]))
+
+        col = 0; row = 10
+        worksheet.write(f"{chr(col+65)}{row}", "info"); row+=1; col+=1
+        for key, value in block.data.items():
+            worksheet.write(f"{chr(col+65)}{row}", f"{key}:" )
+            worksheet.write(f"{chr(col+65+1)}{row}", f"{value}")
+            row+=1
 
     workbook.close()
 
