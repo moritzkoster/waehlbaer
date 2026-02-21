@@ -304,31 +304,37 @@ def add_dusche_series(allocation):
 
 def add_nacht_series(allocation):
     main_block = allocation.get_block_by_ID("ON-05")
+    index = allocation.BLOCKS.index(main_block)
     allocation.BLOCKS.remove(main_block)
     main_block.data["tags"].add("same_day")
     allocation.generate_block_series(
         "ON-05",
         10,
-        main_block.data
+        main_block.data,
+        index=index
     )
 
 def add_wald_series(allocation):
     main_block = allocation.get_block_by_ID("ON-08")
+    index = allocation.BLOCKS.index(main_block)
     allocation.BLOCKS.remove(main_block)
     main_block.data["tags"].add("same_day")
     allocation.generate_block_series(
         "ON-08",
         10,
-        main_block.data
+        main_block.data,
+        index=index
     )
 
 def add_feuerwehr_series(allocation):
     main_block = allocation.get_block_by_ID("OFF-3")
+    index = allocation.BLOCKS.index(main_block)
     allocation.BLOCKS.remove(main_block)
     allocation.generate_block_series(
         "OFF-3",
         5,
-        main_block.data
+        main_block.data,
+        index=index
     )
 
 

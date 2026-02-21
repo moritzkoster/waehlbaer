@@ -979,9 +979,12 @@ class Allocation:
             print(f"ERROR: could not find Unit with ID '{ID}'")
         return None
     
-    def append_block(self, block):
+    def append_block(self, block, index=None):
         if type(block) != Block and type(block) != MetaBlock: print(f"ERROR: type is not block but '{type(block)}'"); return 0
-        self.BLOCKS.append(block)
+        if index is not None:
+            self.BLOCKS.insert(index, block)
+        else:
+            self.BLOCKS.append(block)
         block.allocation = self
     
     def append_unit(self, unit):
@@ -1016,20 +1019,23 @@ class Allocation:
         self.block_cats = cats
         self.cat_map = cat_map
 
-    def generate_block_series(self, base_id, count, data):
+    def generate_block_series(self, base_id, count, data, index = None):
         mb = MetaBlock(base_id, data)
         for i in range(count):
 
             if base_id[-1] in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]: 
-                block_id = f"{base_id}{chr(i+65)}"
+                block_id = f"{base_id}_{chr(i+65)}"
             else:
-                block_id = f"{base_id}{i+1}"
+                block_id = f"{base_id}_{i+1}"
                 
             b = Block(
                     block_id,
                     data
                 )
-            self.append_block(b)
+            if index is not None:
+                self.append_block(b, index=index+i)
+            else:   
+                self.append_block(b)
             mb.add_subblock(b)
         self.append_block(mb)
     
