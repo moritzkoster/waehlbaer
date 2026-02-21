@@ -221,6 +221,7 @@ def abera_kadabera_simsalabim(allocation):
     add_amtli_series(allocation)
     add_nacht_series(allocation)
     add_wald_series(allocation)
+    add_feuerwehr_series(allocation)
 
     twin_blocks(allocation, "ON-28", "ON-29")
     twin_blocks(allocation, "ON-36", "ON-37")
@@ -318,6 +319,15 @@ def add_wald_series(allocation):
     allocation.generate_block_series(
         "ON-08",
         10,
+        main_block.data
+    )
+
+def add_feuerwehr_series(allocation):
+    main_block = allocation.get_block_by_ID("OFF-3")
+    allocation.BLOCKS.remove(main_block)
+    allocation.generate_block_series(
+        "OFF-3",
+        5,
         main_block.data
     )
 

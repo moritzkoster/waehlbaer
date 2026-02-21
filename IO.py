@@ -8,7 +8,7 @@ import datetime
 import os
 import pandas as pd
 
-from Wählbär import Schedule, Block, Unit, Allocation, SLOTS_PER_DAY, DAYS
+from Wählbär import MetaBlock, Schedule, Block, Unit, Allocation, SLOTS_PER_DAY, DAYS
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import xlsxwriter as xls
@@ -579,6 +579,8 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
     }
     
     for ib, block in enumerate(allocation.BLOCKS):
+        if isinstance(block, MetaBlock):
+            continue
         # unit = allocation.UNITS[0]
 
         worksheet = workbook.add_worksheet(block.ID)
