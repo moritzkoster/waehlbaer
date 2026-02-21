@@ -237,6 +237,7 @@ def abera_kadabera_simsalabim(allocation):
     add_freizeit(allocation)
     add_pfadifun(allocation)
     add_wolfstrail(allocation)
+    add_anlässe(allocation)
 
     allocate_wanderung(allocation, print_enabled=True)
     sort_by_score(allocation) 
@@ -297,6 +298,7 @@ def add_dusche_series(allocation):
             "tags": set(["same_day"]), 
             "on_times": [0, 1, 2, 3],
             "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "on_slots": ['C0', 'C1', 'C2', 'C3', 'D0', 'D1', 'D2', 'D3', 'E0', 'E1', 'E2', 'E3', 'F0', 'F1', 'F2', 'F3', 'G0', 'G1', 'G2', 'G3', "I0", "I1", "I2", "I3", "J0", "J1", "J2", "J3", "K0", "K1", "K2", "K3", "L0", "L1", "L2", "L3"],
             "verteilungsprio": 5,
             "state": "Aktiv",
             "mix_units": False
@@ -358,6 +360,25 @@ def add_bogenscheissen_series(allocation):
     allocation.get_block_by_ID("OFF-2_C").data = data_afternoon
     allocation.get_block_by_ID("OFF-2_D").data = data_afternoon
 
+def add_anlässe(allocation):
+
+    eroffnungsfeier = allocation.get_block_by_ID("ON-40")
+    schluss_wölfe = allocation.get_block_by_ID("ON-41")
+    eroffnung_wolfe = allocation.get_block_by_ID("ON-42")
+    schlussfeier = allocation.get_block_by_ID("ON-43")
+
+    for unit in allocation.UNITS:
+        if Schedule.to_idx(eroffnungsfeier.data["on_slots"][0])[0] in unit.present_on:
+            unit.set_block(eroffnungsfeier, eroffnungsfeier.data["on_slots"][0])
+        if Schedule.to_idx(schluss_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+            unit.set_block(schluss_wölfe, schluss_wölfe.data["on_slots"][0])
+        if Schedule.to_idx(eroffnung_wolfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+            unit.set_block(eroffnung_wolfe, eroffnung_wolfe.data["on_slots"][0])
+        if Schedule.to_idx(schlussfeier.data["on_slots"][0])[0] in unit.present_on:
+            unit.set_block(schlussfeier, schlussfeier.data["on_slots"][0])
+     
+
+
 def add_amtli_series(allocation):
     allocation.generate_block_series(
         "OTH-AM", 
@@ -372,6 +393,7 @@ def add_amtli_series(allocation):
             "tags": set(["same_day"]), 
             "on_times": [0, 1, 2],
             "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "on_slots": ['B0', 'B1', 'B2', 'C0', 'C1', 'C2', 'D0', 'D1', 'D2', 'E0', 'E1', 'E2', 'F0', 'F1', 'F2', 'G0', 'G1', 'G2', "H0", "H1", "H2", "I0", "I1", "I2", "J0", "J1", "J2", "K0", "K1", "K2", "L0", "L1", "L2", "M0", "M1", "M2"],
             "state": "Aktiv",
             "verteilungsprio": 5,
             "mix_units": False

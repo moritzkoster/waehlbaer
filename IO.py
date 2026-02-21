@@ -369,7 +369,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
             tags.add("2units")
         mix_units = False
         if not pd.isna(bd.mix_units):
-            if "2/3 Einheiten zusammen" in bd.mix_units:
+            if "2/3 Einheiten zusammen" in bd.mix_units or "ganzes KALA" in bd.mix_units:
                 mix_units = True
 
         allocation.append_block(
