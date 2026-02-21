@@ -222,6 +222,7 @@ def abera_kadabera_simsalabim(allocation):
     add_nacht_series(allocation)
     add_wald_series(allocation)
     add_feuerwehr_series(allocation)
+    add_bogenscheissen_series(allocation)
 
     twin_blocks(allocation, "ON-28", "ON-29")
     twin_blocks(allocation, "ON-36", "ON-37")
@@ -337,6 +338,25 @@ def add_feuerwehr_series(allocation):
         index=index
     )
 
+def add_bogenscheissen_series(allocation):
+    main_block = allocation.get_block_by_ID("OFF-2")
+    index = allocation.BLOCKS.index(main_block)
+    allocation.BLOCKS.remove(main_block)
+    allocation.generate_block_series(
+        "OFF-2",
+        4,
+        main_block.data,
+        index=index
+    )
+
+    allocation.get_block_by_ID("OFF-2_A").data["on_slots"] = ['D1', 'G0']
+    
+    data_afternoon = main_block.data.copy()
+    data_afternoon["on_slots"] = ['G1']
+
+    allocation.get_block_by_ID("OFF-2_B").data = data_afternoon
+    allocation.get_block_by_ID("OFF-2_C").data = data_afternoon
+    allocation.get_block_by_ID("OFF-2_D").data = data_afternoon
 
 def add_amtli_series(allocation):
     allocation.generate_block_series(
