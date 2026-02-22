@@ -126,7 +126,7 @@ def try_assign(unit, block, print_enabled=False):
             # print(f"Matching slots with sauber distances: {matching}")
             matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
 
-        block.set_unit(unit, matching[0])
+        block.set_unit(unit,matching[0])
         return True
     else:
         if print_enabled:
@@ -239,44 +239,44 @@ def abera_kadabera_simsalabim(allocation):
     add_wolfstrail(allocation)
     add_anlässe(allocation)
 
-    allocate_wanderung(allocation, print_enabled=True)
+    allocate_wanderung(allocation, print_enabled=False)
     sort_by_score(allocation) 
-    allocate_cat(allocation, "ausflug", print_enabled=True)  
+    allocate_cat(allocation, "ausflug", print_enabled=False)  
     sort_by_score(allocation)
-    allocate_cat(allocation, "si-mo",   print_enabled=True) 
+    allocate_cat(allocation, "si-mo",   print_enabled=False) 
     sort_by_score(allocation) 
-    allocate_cat(allocation, "workshop", print_enabled=True) 
+    allocate_cat(allocation, "workshop", print_enabled=False) 
     sort_by_score(allocation) 
-    allocate_cat(allocation, "sportaktivitat", print_enabled=True) 
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False) 
     sort_by_score(allocation) 
-    allocate_cat(allocation, "wasser", print_enabled=True)
+    allocate_cat(allocation, "wasser", print_enabled=False)
     sort_by_score(allocation) 
-    allocate_cat(allocation, "workshop", print_enabled=True)
+    allocate_cat(allocation, "workshop", print_enabled=False)
     sort_by_score(allocation)
-    allocate_cat(allocation, "sportaktivitat", print_enabled=True)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False)
     sort_by_score(allocation)
-    allocate_cat(allocation, "sportaktivitat", print_enabled=True)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False)
     
     for i in range(6): # assigne 6 rounds of wald
         sort_by_score(allocation) 
-        allocate_wald(allocation, print_enabled=True)
+        allocate_wald(allocation, print_enabled=False)
     for i in range(4): # assign 4 rounds of nachtaktivität
         sort_by_score(allocation)
-        allocate_nacht(allocation, print_enabled=True)
+        allocate_nacht(allocation, print_enabled=False)
     
     sort_by_score(allocation)
-    allocate_flussbaden(allocation, print_enabled=True)
+    allocate_flussbaden(allocation, print_enabled=False)
    
     sort_by_score(allocation) 
-    allocate_cat(allocation, "programmflache", print_enabled=True)
+    allocate_cat(allocation, "programmflache", print_enabled=False)
     sort_by_score(allocation)
-    allocate_cat(allocation, "programmflache", print_enabled=True)
+    allocate_cat(allocation, "programmflache", print_enabled=False)
     sort_by_score(allocation) 
-    allocate_block(allocation, "OTH-DU", print_enabled=True)
+    allocate_block(allocation, "OTH-DU", print_enabled=False)
     sort_by_score(allocation)
-    allocate_block(allocation, "OTH-DU", print_enabled=True)
+    allocate_block(allocation, "OTH-DU", print_enabled=False)
 
-    allocate_block(allocation, "OTH-AM", print_enabled=True)
+    allocate_block(allocation, "OTH-AM", print_enabled=False)
 
     allocation.remve_KC_from_all_blocks() # remove KC from blocks, so that they can be assigned to other units if needed
 
@@ -382,7 +382,7 @@ def add_anlässe(allocation):
 def add_amtli_series(allocation):
     allocation.generate_block_series(
         "OTH-AM", 
-        4, 
+        0, 
         {
             "fullname": "Amtli", 
             "cat": "amtli", 
@@ -410,6 +410,7 @@ def twin_blocks(allocation, blockID1, blockID2):
 
 def main(seed):
     allocation = Allocation(seed) # crete allocation with seed for reproducibility (seed is unused in this version)
+
     load_blocklist(allocation) # load blocks from xlsx
     load_unitlist(allocation) # load units from xlsx
     
