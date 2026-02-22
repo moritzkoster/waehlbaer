@@ -310,7 +310,7 @@ def long_blocks(slot, self, blockdata):
     # print(last_6_slots, slot)
     for i, slot in enumerate(next_slots):
         if self.schedule[slot]:
-            if blockdata["ID"] in ["OFF-17", "OFF-18", "OFF-19"] and  self.schedule[slot][0].ID == "ON-39":  # OVERRIDE zweitageswanderung darf während freizeit sein
+            if blockdata["ID"] in ["OFF-17", "OFF-18", "OFF-19", "OFF-20", "OFF-24", "OFF-25"] and  self.schedule[slot][0].ID == "ON-39":  # OVERRIDE zweitageswanderung darf während freizeit sein
                 continue
             if blockdata["cat"] == "ausflug" and self.schedule[slot][0].ID == "ON-39": # override ausflüge wärend freizeit
                 continue
