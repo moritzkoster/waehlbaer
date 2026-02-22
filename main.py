@@ -196,7 +196,6 @@ def add_wolfstrail(allocation):
     wolfstrail_block.set_unit(units_first_week[4], "B2")
     wolfstrail_block.set_unit(units_first_week[5], "B2")
     wolfstrail_block.set_unit(units_first_week[6], "B2")
-    
     wolfstrail_block.set_unit(units_first_week[7], "B1")
     wolfstrail_block.set_unit(units_first_week[8], "B1")
     wolfstrail_block.set_unit(units_first_week[9], "B1")
@@ -368,7 +367,7 @@ def add_anlässe(allocation):
     eroffnung_wolfe = allocation.get_block_by_ID("ON-42")
     schlussfeier = allocation.get_block_by_ID("ON-43")
     anreise_wölfe = allocation.get_block_by_ID("ON-44")
-    abreise_wölfe = allocation.get_block_by_ID("ON-45")
+
 
     for unit in allocation.UNITS:
         if Schedule.to_idx(eroffnungsfeier.data["on_slots"][0])[0] in unit.present_on:
@@ -379,13 +378,11 @@ def add_anlässe(allocation):
             unit.set_block(eroffnung_wolfe, eroffnung_wolfe.data["on_slots"][0])
         if Schedule.to_idx(schlussfeier.data["on_slots"][0])[0] in unit.present_on:
             unit.set_block(schlussfeier, schlussfeier.data["on_slots"][0])
-
         if Schedule.to_idx(anreise_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
             unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][0])
         if Schedule.to_idx(anreise_wölfe.data["on_slots"][1])[0] in unit.present_on and unit.group == "wo":
             unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][1])
-        if Schedule.to_idx(abreise_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
-            unit.set_block(abreise_wölfe, abreise_wölfe.data["on_slots"][0])
+
         
      
 

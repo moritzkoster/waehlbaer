@@ -226,7 +226,7 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
                 data["present_on"] = [e-12 for e in range(12, 25+1)] # -12 to convert to wählbär day (12.7. is Day 0)
             if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
-                data["present_on"] = [e-12 for e in range(13, 18+1)]
+                data["present_on"] = [e-12 for e in range(13, 18)]
             if tn_numbers.loc[ID, "Datum"] == "20.-25. Juli 2026":
                 data["present_on"] = [e-12 for e in range(20, 25+1)]
 
