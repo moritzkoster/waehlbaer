@@ -189,30 +189,30 @@ def add_wolfstrail(allocation):
     print(len(units_first_week), len(units_second_week))
 
     # TODO zuweisen von hand:
-    wolfstrail_block.set_unit(units_first_week[0], "F2")
-    wolfstrail_block.set_unit(units_first_week[1], "F2")
-    wolfstrail_block.set_unit(units_first_week[2], "F1")
-    wolfstrail_block.set_unit(units_first_week[3], "F1")
-    wolfstrail_block.set_unit(units_first_week[4], "F0")
-    wolfstrail_block.set_unit(units_first_week[5], "F0")
-    wolfstrail_block.set_unit(units_first_week[6], "E2")
-    wolfstrail_block.set_unit(units_first_week[7], "E2")
-    wolfstrail_block.set_unit(units_first_week[8], "E1")
-    wolfstrail_block.set_unit(units_first_week[9], "E1")
-    wolfstrail_block.set_unit(units_first_week[10], "E1")
+    wolfstrail_block.set_unit(units_first_week[0], "D1")
+    wolfstrail_block.set_unit(units_first_week[1], "D1")
+    wolfstrail_block.set_unit(units_first_week[2], "D1")
+    wolfstrail_block.set_unit(units_first_week[3], "B2")
+    wolfstrail_block.set_unit(units_first_week[4], "B2")
+    wolfstrail_block.set_unit(units_first_week[5], "B2")
+    wolfstrail_block.set_unit(units_first_week[6], "B2")
+    wolfstrail_block.set_unit(units_first_week[7], "B1")
+    wolfstrail_block.set_unit(units_first_week[8], "B1")
+    wolfstrail_block.set_unit(units_first_week[9], "B1")
+    wolfstrail_block.set_unit(units_first_week[10], "B1")
 
     # Second week assignments
-    wolfstrail_block.set_unit(units_second_week[0], "K2")
-    wolfstrail_block.set_unit(units_second_week[1], "K2")
-    wolfstrail_block.set_unit(units_second_week[2], "K1")
-    wolfstrail_block.set_unit(units_second_week[3], "K1")
-    wolfstrail_block.set_unit(units_second_week[4], "K0")
-    wolfstrail_block.set_unit(units_second_week[5], "K0")
-    wolfstrail_block.set_unit(units_second_week[6], "J2")
-    wolfstrail_block.set_unit(units_second_week[7], "J2")
-    wolfstrail_block.set_unit(units_second_week[8], "J1")
-    wolfstrail_block.set_unit(units_second_week[9], "J1")
-    wolfstrail_block.set_unit(units_second_week[10], "J1")
+    wolfstrail_block.set_unit(units_second_week[0], "L1")
+    wolfstrail_block.set_unit(units_second_week[1], "L1")
+    wolfstrail_block.set_unit(units_second_week[2], "L1")
+    wolfstrail_block.set_unit(units_second_week[3], "I2")
+    wolfstrail_block.set_unit(units_second_week[4], "I2")
+    wolfstrail_block.set_unit(units_second_week[5], "I2")
+    wolfstrail_block.set_unit(units_second_week[6], "I2")
+    wolfstrail_block.set_unit(units_second_week[7], "I1")
+    wolfstrail_block.set_unit(units_second_week[8], "I1")
+    wolfstrail_block.set_unit(units_second_week[9], "I1")
+    wolfstrail_block.set_unit(units_second_week[10], "I1")
 
 
 
@@ -324,7 +324,7 @@ def add_wald_series(allocation):
     main_block.data["tags"].add("same_day")
     allocation.generate_block_series(
         "ON-08",
-        10,
+        8,
         main_block.data,
         index=index
     )
