@@ -196,10 +196,11 @@ def add_wolfstrail(allocation):
     wolfstrail_block.set_unit(units_first_week[4], "B2")
     wolfstrail_block.set_unit(units_first_week[5], "B2")
     wolfstrail_block.set_unit(units_first_week[6], "B2")
+    
     wolfstrail_block.set_unit(units_first_week[7], "B1")
     wolfstrail_block.set_unit(units_first_week[8], "B1")
     wolfstrail_block.set_unit(units_first_week[9], "B1")
-    wolfstrail_block.set_unit(units_first_week[10], "B1")
+    # wolfstrail_block.set_unit(units_first_week[10], "B1")
 
     # Second week assignments
     wolfstrail_block.set_unit(units_second_week[0], "L1")
@@ -258,7 +259,7 @@ def abera_kadabera_simsalabim(allocation):
     allocate_cat(allocation, "sportaktivitat", print_enabled=False)
     
     for i in range(6): # assigne 6 rounds of wald
-        sort_by_score(allocation) 
+        sort_by_score(allocation)
         allocate_wald(allocation, print_enabled=False)
     for i in range(4): # assign 4 rounds of nachtaktivität
         sort_by_score(allocation)
@@ -419,6 +420,8 @@ def twin_blocks(allocation, blockID1, blockID2):
   
 
 def main(seed):
+
+
     allocation = Allocation(seed) # crete allocation with seed for reproducibility (seed is unused in this version)
 
     load_blocklist(allocation) # load blocks from xlsx
