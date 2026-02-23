@@ -126,6 +126,15 @@ def try_assign(unit, block, print_enabled=False):
             # print(f"Matching slots with sauber distances: {matching}")
             matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
             slot_to_set = matching[0]
+
+        if block.data["cat"] == "wald" or block.data["cat"] == "nacht":
+            large_distance_matching = distance_larger_than(unit, matching, distance=2, cat=block.data["cat"])
+            if not large_distance_matching:
+                large_distance_matching = matching
+                if print_enabled:
+                    print(f"{FORMAT.RED}No matching slots with sufficient distance for block {block.ID} and unit {unit.ID}{FORMAT.RESET}")
+            slot_to_set = random.choice(large_distance_matching)       
+            
         else:
             slot_to_set = random.choice(matching)
         
@@ -162,6 +171,23 @@ def calculate_sauber_distance(unit, matching_slots):
             matched_with_distances.append({"slot": slot, "sauber_distance": mindist})
     return matched_with_distances
 
+def distance_larger_than(unit, slots, distance, cat):
+    return_slots = []
+    for s in slots:
+        if type(s) == dict:
+            sx = s["slot"]
+        else:
+            sx = s
+
+        mindist = 99
+        for entry in unit.schedule.get_list(with_slot=True):
+            if "cat" in entry["element"].data and entry["element"].data["cat"] == cat:
+                dist = abs(Schedule.to_idx(sx)[0] - Schedule.to_idx(entry["slot"])[0])
+                if dist < mindist:
+                    mindist = dist
+        if mindist > distance:
+            return_slots.append(s)
+    return return_slots
 
 def add_freizeit(allocation):
     block_freizeit = allocation.get_block_by_ID("ON-39")
@@ -228,25 +254,6 @@ def clear_after_slot(start, length, unit):
         
 
 def abera_kadabera_simsalabim(allocation):
-    allocation.find_block_cats()
-
-    add_dusche_series(allocation)
-    add_amtli_series(allocation)
-    add_nacht_series(allocation)
-    add_wald_series(allocation)
-    add_feuerwehr_series(allocation)
-    add_bogenscheissen_series(allocation)
-
-    twin_blocks(allocation, "ON-28", "ON-29")
-    twin_blocks(allocation, "ON-36", "ON-37")
-
-    allocation.get_block_by_ID("ON-05").data["cat"] = "nacht"
-    allocation.get_block_by_ID("ON-08").data["cat"] = "wald"    
-    
-    allocation.get_block_by_ID("OFF-21").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
-    allocation.get_block_by_ID("OFF-22").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
-    allocation.get_block_by_ID("OFF-23").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
-
 
     add_freizeit(allocation)
     add_pfadifun(allocation)
@@ -280,7 +287,7 @@ def abera_kadabera_simsalabim(allocation):
     
     for _ in range(3): # assign 3 blocks with flussbaden
         sort_by_score(allocation)
-        allocate_flussbaden(allocation, print_enabled=True)
+        allocate_flussbaden(allocation, print_enabled=False)
    
 
     sort_by_score(allocation) 
@@ -440,17 +447,45 @@ def main(seed):
     load_blocklist(allocation) # load blocks from xlsx
     load_unitlist(allocation) # load units from xlsx
     
-    stime = time.time() # save start time for runtime evaluation
+    allocation.find_block_cats()
 
-    abera_kadabera_simsalabim(allocation) # do magic stuff
+    add_dusche_series(allocation)
+    add_amtli_series(allocation)
+    add_nacht_series(allocation)
+    add_wald_series(allocation)
+    add_feuerwehr_series(allocation)
+    add_bogenscheissen_series(allocation)
 
-    run_eval = time.time() - stime # calculate runtime
-    allocation.log_stats("log.txt", run_eval)
-    allocation.save("a1.json") 
-    allocation.print_stats() 
-    write_to_xlsx(allocation, fname="alc1.xlsx")
+    twin_blocks(allocation, "ON-28", "ON-29")
+    twin_blocks(allocation, "ON-36", "ON-37")
 
-    return allocation.stats()[0].sum()
+    allocation.get_block_by_ID("ON-05").data["cat"] = "nacht"
+    allocation.get_block_by_ID("ON-08").data["cat"] = "wald"    
+    
+    allocation.get_block_by_ID("OFF-21").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-22").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-23").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+
+
+    for i in range(10): # assign 3 rounds of wanderung first, as they are the hardest to assign due to their length
+        stime = time.time() # save start time for runtime evaluation
+        random.seed(i) # reset seed before allocation to ensure same random choices for each run with the same seed
+        allocation.seed = i # reset allocation to empty state before each run
+        
+        abera_kadabera_simsalabim(allocation) # do magic stuff
+
+        run_eval = time.time() - stime # calculate runtime
+        allocation.log_stats("log.txt", run_eval)
+        allocation.print_stats() 
+        
+        allocation.clear_schedules()
+
+
+
+    # allocation.save("a1.json") 
+
+
+    # return allocation.stats()[0].sum()
 
 if __name__ == "__main__": 
     main(1) # exectue main allocation function with seed 1

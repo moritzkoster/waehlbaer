@@ -100,7 +100,7 @@ class Schedule:
                 day += 1
             
             if day >= DAYS:
-                print("ERROR: no next slots available")
+                pass
             else:
                 slots.append(Schedule.idx2str(day, time))
         return slots
@@ -950,7 +950,7 @@ class Allocation:
     def clear_schedules(self):
         for block in self.BLOCKS:
             block.schedule.clear()
-        for unit in self.BLOCKS:
+        for unit in self.UNITS:
             unit.schedule.clear()
 
     def clear_lists(self):
