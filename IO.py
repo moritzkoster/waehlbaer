@@ -44,14 +44,59 @@ def slot_to_table_idx(slot):
 def export_to_pdf(unit):
 
     doc = Document("templates/template_unit.docx")
-    # TODO: define all replacements
-    
+    for day in range(DAYS):
+        for time in range(SLOTS_PER_DAY):
+            slot = Schedule.idx2str(day, time)
+            block = unit.schedule[slot]
+            placeholder_ID = "{"+ f"{slot}_id"+ "}"
+            placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
+            if len(block) == 1:
+                block = block[0]
+                id_short = block.ID.split("_")[0] # remove ON-11_XYZ -> ON-11
+                if id_short in ["ON-01", "ON-40", "ON-41", "ON-42", "ON-43"]:
+                    id_short += "*"
+                if id_short[:3] == "OFF":
+                    id_short +="**"
+                replace_text_in_document(doc, placeholder_ID, id_short)
+                replace_text_in_document(doc, placeholder_fullname, block.data["fullname"])
+            elif len(block) == 0:
+                replace_text_in_document(doc, placeholder_ID, "")
+                replace_text_in_document(doc, placeholder_fullname, "")
+            elif len(block) > 1:
+                print(f"ERROR: more than one block in slot {slot} of unit {unit.ID}")
+                for i, block in enumerate(block):
+                    print("  -  ", block.ID)
+    group_map = {
+        "pf": "Pfadis",
+        "pi": "Pios",
+        "wo": "Wölfe"
+    }
+
     for placeholder, value in { # TODO
-    "{name}": unit.data["fullname"],
+    "{name}": unit.fullname,
     "{date}": datetime.datetime.now().date().strftime("%d.%m.%Y"),
     "{ID}": str(unit.ID),
-    "{group}": unit.data["group"]}.items():
+    "{group}": group_map.get(unit.group, "Unbekannt"),
+    "{B1_id}": "TEST"}.items():
         replace_text_in_document(doc, placeholder, value)
+
+    color_map = {
+        "anlass": "#000000",
+        "ausflug": "#f2c966",
+        "wanderung": "#00b48f",
+        "sportaktivitat": "#c6464a",
+        "programmflache": "#e87928",
+        "wald": "#e87928",
+        "nacht": "#e87928",
+        "wasser": "#608ee4",
+        "flussbaden": "#608ee4",
+        "si-mo": "#608ee4",
+        "dusche": "#608ee4",
+        "workshop": "#4f2c1d",
+    }
+
+
+
 
     for block in unit.schedule.get_list(with_slot=True):
         tab, row, col = slot_to_table_idx(block["slot"])
@@ -62,7 +107,7 @@ def export_to_pdf(unit):
 
         # Set the background color of the cell
         shading_elm = OxmlElement('w:shd')
-        shading_elm.set(qn('w:fill'), "00b48f")  # green color
+        shading_elm.set(qn('w:fill'), color_map.get(block["element"].data["cat"], "#808080"))  # default white color
         cell._tc.get_or_add_tcPr().append(shading_elm)
 
 

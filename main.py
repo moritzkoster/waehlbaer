@@ -1,9 +1,9 @@
 from Wählbär import Allocation, Schedule
 import multiprocessing as mp
 import time
+import random
 
-
-from IO import print_schedule, write_to_xlsx, load_blocklist, load_unitlist, FORMAT
+from IO import print_schedule, write_to_xlsx, load_blocklist, load_unitlist, FORMAT, export_to_pdf
 
 # RED = "\033[31m"
 # YELLOW = "\033[33m"
@@ -125,8 +125,10 @@ def try_assign(unit, block, print_enabled=False):
             matching = calculate_sauber_distance(unit, matching)
             # print(f"Matching slots with sauber distances: {matching}")
             matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
-
-        block.set_unit(unit,matching[0])
+            block.set_unit(unit, matching[0])
+        else:
+            random_matching = random.choice(matching)
+            block.set_unit(unit, random_matching)
         return True
     else:
         if print_enabled:
@@ -279,6 +281,8 @@ def abera_kadabera_simsalabim(allocation):
     allocate_block(allocation, "OTH-AM", print_enabled=False)
 
     allocation.remve_KC_from_all_blocks() # remove KC from blocks, so that they can be assigned to other units if needed
+    
+    export_to_pdf(allocation.get_unit_by_ID("202"))
 
 
 def print_reasons(search_result):
