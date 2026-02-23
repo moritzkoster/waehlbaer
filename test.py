@@ -12,19 +12,20 @@ GREEN = "\033[32m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 i = 1
-
+    
 # PRINT UNITS
-for unit in a.UNITS:
-    print(unit)
+print(a.get_block_by_ID("OFF-21"))
+# for unit in a.UNITS:
+#     print(unit)
 
-# PRINT BLOCKS
-for block in a.BLOCKS:
-    print(block)
+# # PRINT BLOCKS
+# for block in a.BLOCKS:
+#     print(block)
 
-# SEARCH LAGRE UNITS
+# # SEARCH LAGRE UNITS
 
-for unit in a.UNITS:
-    if "large_unit" in unit.tags:
-        print(f"{YELLOW}{i:>2}: Large Unit{RESET}: {unit.ID} with {unit.n_people} TN"); i+=1
+# for unit in a.UNITS:
+#     if "large_unit" in unit.tags:
+#         print(f"{YELLOW}{i:>2}: Large Unit{RESET}: {unit.ID} with {unit.n_people} TN"); i+=1
 
 

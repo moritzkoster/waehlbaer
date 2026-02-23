@@ -157,11 +157,15 @@ class Schedule:
 
     def remove_block(self, block=None, slot=None):
         if type(self.owner) == Block: print("ERROR: cannot remove block from Block()")
+        if not block:
+            block = self[slot][0]
         self.remove_entry(block, slot)
         block.schedule.remove_entry(self.owner, slot)
     
     def remove_unit(self, unit=None, slot=None):
         if type(self.owner) == Unit: print("ERROR: cannot remove unit from Unit()")
+        if not unit:
+            unit = self[slot][0]
         self.remove_entry(unit, slot)
         unit.schedule.remove_entry(self.owner, slot)
 
@@ -433,7 +437,7 @@ class Block:
             print("ERROR: slot must be str 'A0' or dict {'slot': 'A0', ...}"); return 
 
     def remove_unit(self, unit=None, slot=None):
-        self.schedule.remove_unit(self, unit, slot)
+        self.schedule.remove_unit(unit, slot)
   
     # returns free slots of block
     # accounts for other units, block requirements

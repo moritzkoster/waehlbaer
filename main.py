@@ -125,10 +125,13 @@ def try_assign(unit, block, print_enabled=False):
             matching = calculate_sauber_distance(unit, matching)
             # print(f"Matching slots with sauber distances: {matching}")
             matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
-            block.set_unit(unit, matching[0])
+            slot_to_set = matching[0]
         else:
-            random_matching = random.choice(matching)
-            block.set_unit(unit, random_matching)
+            slot_to_set = random.choice(matching)
+        
+        clear_after_slot(slot_to_set, block.data["length"]-1, unit) # clear before setting to not clear the KC blocks again
+        block.set_unit(unit,slot_to_set)
+
         return True
     else:
         if print_enabled:
@@ -216,9 +219,17 @@ def add_wolfstrail(allocation):
     wolfstrail_block.set_unit(units_second_week[9], "I1")
     wolfstrail_block.set_unit(units_second_week[10], "I1")
 
-
+def clear_after_slot(start, length, unit):
+    if type(start) == dict:
+        start = start["slot"]
+    for slot in Schedule.next_N_slots(start, N=length): 
+        if unit.schedule[slot]: # if there is a block assigned in this slot
+            unit.remove_block(slot=slot) # clear schedule of unit and block for this slot
+        
 
 def abera_kadabera_simsalabim(allocation):
+    allocation.find_block_cats()
+
     add_dusche_series(allocation)
     add_amtli_series(allocation)
     add_nacht_series(allocation)
@@ -232,9 +243,10 @@ def abera_kadabera_simsalabim(allocation):
     allocation.get_block_by_ID("ON-05").data["cat"] = "nacht"
     allocation.get_block_by_ID("ON-08").data["cat"] = "wald"    
     
-    allocation.find_block_cats()
-    # allocation.print_unitlist()
-    # allocation.print_blocklist()
+    allocation.get_block_by_ID("OFF-21").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-22").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-23").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+
 
     add_freizeit(allocation)
     add_pfadifun(allocation)
@@ -266,9 +278,11 @@ def abera_kadabera_simsalabim(allocation):
         sort_by_score(allocation)
         allocate_nacht(allocation, print_enabled=False)
     
-    sort_by_score(allocation)
-    allocate_flussbaden(allocation, print_enabled=False)
+    for _ in range(3): # assign 3 blocks with flussbaden
+        sort_by_score(allocation)
+        allocate_flussbaden(allocation, print_enabled=True)
    
+
     sort_by_score(allocation) 
     allocate_cat(allocation, "programmflache", print_enabled=False)
     sort_by_score(allocation)
@@ -281,8 +295,6 @@ def abera_kadabera_simsalabim(allocation):
     allocate_block(allocation, "OTH-AM", print_enabled=False)
 
     allocation.remve_KC_from_all_blocks() # remove KC from blocks, so that they can be assigned to other units if needed
-    
-    export_to_pdf(allocation.get_unit_by_ID("202"))
 
 
 def print_reasons(search_result):
@@ -422,7 +434,7 @@ def twin_blocks(allocation, blockID1, blockID2):
 
 def main(seed):
 
-
+    random.seed(seed) # set seed for reproducibility (affects random choices in allocation)
     allocation = Allocation(seed) # crete allocation with seed for reproducibility (seed is unused in this version)
 
     load_blocklist(allocation) # load blocks from xlsx
