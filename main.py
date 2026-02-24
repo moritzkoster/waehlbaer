@@ -123,11 +123,13 @@ def try_assign(unit, block, print_enabled=False):
     if matching:
         if "tags" in block.data and "sauber" in block.data["tags"]:
             matching = calculate_sauber_distance(unit, matching)
-            # print(f"Matching slots with sauber distances: {matching}")
             matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
             slot_to_set = matching[0]
+        
+            if matching[0]["sauber_distance"] <=1 and print_enabled:
+                print(f"{FORMAT.RED}Warning: Small distance to other sauber blocks for unit {unit.ID} and block {block.ID}{FORMAT.RESET}")
 
-        if block.data["cat"] == "wald" or block.data["cat"] == "nacht":
+        elif block.data["cat"] == "wald" or block.data["cat"] == "nacht":
             large_distance_matching = distance_larger_than(unit, matching, distance=2, cat=block.data["cat"])
             if not large_distance_matching:
                 large_distance_matching = matching
@@ -212,7 +214,7 @@ def add_wolfstrail(allocation):
     units_second_week = []
     for unit in allocation.UNITS:
         if "wolfstrail" in unit.general and unit.general["wolfstrail"]:
-            if unit.present_on[0] == 1:
+            if unit.present_on[0] < 3:
                 units_first_week.append(unit)
             else:
                 units_second_week.append(unit)
@@ -393,18 +395,18 @@ def add_anlässe(allocation):
 
 
     for unit in allocation.UNITS:
-        if Schedule.to_idx(eroffnungsfeier.data["on_slots"][0])[0] in unit.present_on:
+        if unit.present_on[0] < 3:
             unit.set_block(eroffnungsfeier, eroffnungsfeier.data["on_slots"][0])
-        if Schedule.to_idx(schluss_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+        if unit.group == "wo" and unit.present_on[0] < 3:
             unit.set_block(schluss_wölfe, schluss_wölfe.data["on_slots"][0])
-        if Schedule.to_idx(eroffnung_wolfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+        if unit.group == "wo" and unit.present_on[0] > 3: # only assign eroffnung_wolfe to wölfe who are present in the second week, as the block is on day 13
             unit.set_block(eroffnung_wolfe, eroffnung_wolfe.data["on_slots"][0])
-        if Schedule.to_idx(schlussfeier.data["on_slots"][0])[0] in unit.present_on:
+        if  unit.present_on[-1] > 10: # assign schlussfeier to all units who are present on the day of the schlussfeier, but not to wölfe who are only present in the second week, as they have their own schlussfeier
             unit.set_block(schlussfeier, schlussfeier.data["on_slots"][0])
-        if Schedule.to_idx(anreise_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
-            unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][0])
-        if Schedule.to_idx(anreise_wölfe.data["on_slots"][1])[0] in unit.present_on and unit.group == "wo":
-            unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][1])
+        # if Schedule.to_idx(anreise_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+        #     unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][0])
+        # if Schedule.to_idx(anreise_wölfe.data["on_slots"][1])[0] in unit.present_on and unit.group == "wo":
+        #     unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][1])
 
         
      
@@ -437,7 +439,12 @@ def twin_blocks(allocation, blockID1, blockID2):
     block2 = allocation.get_block_by_ID(blockID2)
     block1.twin_block = block2
     block2.twin_block = block1
-  
+
+def export(allocation):
+    total = len(allocation.UNITS)
+    for i, unit in enumerate(allocation.UNITS):
+        print(f"\r({i+1:>3}/{total}) Export PDF for unit {unit.ID} ... ", end="")
+        export_to_pdf(unit)
 
 def main(seed):
 
@@ -466,19 +473,29 @@ def main(seed):
     allocation.get_block_by_ID("OFF-22").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
     allocation.get_block_by_ID("OFF-23").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
 
+    allocation.collect_high_prio_units()
+    print(allocation.get_verteilungsprio_block(1))
+    
 
-    for i in range(10): # assign 3 rounds of wanderung first, as they are the hardest to assign due to their length
+    for i in range(1000):
+    # i = 1  
         stime = time.time() # save start time for runtime evaluation
         random.seed(i) # reset seed before allocation to ensure same random choices for each run with the same seed
         allocation.seed = i # reset allocation to empty state before each run
+        
+        allocation.clear_schedules()
         
         abera_kadabera_simsalabim(allocation) # do magic stuff
 
         run_eval = time.time() - stime # calculate runtime
         allocation.log_stats("log.txt", run_eval)
         allocation.print_stats() 
-        
-        allocation.clear_schedules()
+
+    
+    # write_to_xlsx(allocation) # export allocation to xlsx
+
+    # export(allocation) # export individual schedules to pdf
+    
 
 
 

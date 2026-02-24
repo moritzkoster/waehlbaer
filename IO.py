@@ -35,21 +35,36 @@ def slot_to_table_idx(slot):
     row = idx[1] +1
     if idx[0] <= 6:
         col = idx[0] 
-        return 0, row, col
+        return 0, row, col+1
     else:
         col = idx[0] -6 
         return 2, row, col
 
 
+
 def export_to_pdf(unit):
 
-    doc = Document("templates/template_unit.docx")
+    if unit.group == "pf" or unit.group == "pi":
+        doc = Document("templates/template_unit_pf_pi.docx")
+    elif unit.group == "wo":
+        if unit.present_on[0] <3 :
+            doc = Document("templates/template_unit_wo_w1.docx")
+        else:
+            doc = Document("templates/template_unit_wo_w2.docx")
+    else:
+        print(f"ERROR: unknown group {unit.group} of unit {unit.ID}")
+        doc = Document("templates/template_unit_pf_pi.docx")
+    
+    # doc = Document("templates/template_unit_v2.docx")
+    doc.core_properties.author = "made with Wählbär"
+
     for day in range(DAYS):
         for time in range(SLOTS_PER_DAY):
             slot = Schedule.idx2str(day, time)
             block = unit.schedule[slot]
             placeholder_ID = "{"+ f"{slot}_id"+ "}"
             placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
+     
             if len(block) == 1:
                 block = block[0]
                 id_short = block.ID.split("_")[0] # remove ON-11_XYZ -> ON-11
@@ -98,17 +113,23 @@ def export_to_pdf(unit):
 
 
 
-    for block in unit.schedule.get_list(with_slot=True):
-        tab, row, col = slot_to_table_idx(block["slot"])
-        table = doc.tables[tab]
+    for entry in unit.schedule.get_list(with_slot=True):
+        slot = entry["slot"]
+        next_N_slots = Schedule.next_N_slots(slot, entry["element"].data["length"]-1)
 
-        # Access the cell (e.g., first row, first column)
-        cell = table.cell(row, col)
+        for slot in [slot, *next_N_slots]:
+            tab, row, col = slot_to_table_idx(slot)
+            if unit.group == "wo" and unit.present_on[0] >= 3: # wölfe have a different template for days 3-12
+                tab -= 2
+            table = doc.tables[tab]
+    
+            # Access the cell (e.g., first row, first column)
+            cell = table.cell(row, col)
 
-        # Set the background color of the cell
-        shading_elm = OxmlElement('w:shd')
-        shading_elm.set(qn('w:fill'), color_map.get(block["element"].data["cat"], "#808080"))  # default white color
-        cell._tc.get_or_add_tcPr().append(shading_elm)
+            # Set the background color of the cell
+            shading_elm = OxmlElement('w:shd')
+            shading_elm.set(qn('w:fill'), color_map.get(entry["element"].data["cat"], "#808080"))  # default white color
+            cell._tc.get_or_add_tcPr().append(shading_elm)
 
 
 
@@ -271,9 +292,9 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
             if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
                 data["present_on"] = [e-12 for e in range(12, 25+1)] # -12 to convert to wählbär day (12.7. is Day 0)
             if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
-                data["present_on"] = [e-12 for e in range(13, 18)]
+                data["present_on"] = [e-12 for e in range(14, 17+1)] # 14 for no program on day 13
             if tn_numbers.loc[ID, "Datum"] == "20.-25. Juli 2026":
-                data["present_on"] = [e-12 for e in range(20, 25+1)]
+                data["present_on"] = [e-12 for e in range(21, 25+1)]
 
             allocation.append_unit(
                 Unit(
@@ -376,6 +397,7 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         'verteilungsprio'
     ]
 
+    allocation.vp_bonus = {}
     df = pd.concat([df, df_offsite], ignore_index=True)
     df = df.dropna(subset=["ID"])
     for bd in df.itertuples():
@@ -416,7 +438,9 @@ def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
         if not pd.isna(bd.mix_units):
             if "2/3 Einheiten zusammen" in bd.mix_units or "ganzes KALA" in bd.mix_units:
                 mix_units = True
-
+        if bd.verteilungsprio and pd.notna(bd.verteilungsprio):
+            allocation.vp_bonus[bd.ID] = (5 - int(str(bd.verteilungsprio)[0]))/5 # higher prio -> higher bonus, max bonus is 0.8 for prio 1
+    
         allocation.append_block(
             Block(
                 bd.ID,

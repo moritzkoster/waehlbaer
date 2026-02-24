@@ -269,7 +269,7 @@ def no_two_workshops_in_same_week(slot, self, block_req):
 #     return True 
 
 def max_per_week(slot, self, block_req):
-    if block_req["cat"] not in ["wald", "nacht" , "dusche"]: return True
+    if block_req["cat"] not in ["wald", "nacht" , "dusche", "flussbaden"]: return True
 
     if Schedule.to_idx(slot)[0] < 7:
         test_days = range(1, 6+1)
@@ -286,7 +286,8 @@ def max_per_week(slot, self, block_req):
     max_counts_per_week = {
         "wald": 3,
         "nacht": 2,
-        "dusche": 1
+        "dusche": 1,
+        "flussbaden": 1
     }
 
     return count < max_counts_per_week[block_req["cat"]]
@@ -830,7 +831,10 @@ class Unit:
                     else:
                         prios[cat] = [{"ID": "OFF-21", "value": -1}, {"ID": "OFF-22", "value": -1}, {"ID": "OFF-23", "value": -1}]
                     continue
-
+                
+                if ID in self.allocation.vp_bonus:
+                    value += self.allocation.vp_bonus[ID]
+                    
                 if cat in prios:
                     prios[cat].append({"ID": ID, "value": value})
                 else:
@@ -1053,96 +1057,20 @@ class Allocation:
         for u in self.UNITS:
             print(u)
 
-
- 
-
-    # def load_unitlist(self, path="data", filename="Antworten Buchungstool.xlsx"):
-    #     df = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=1)
-        
-    #     PRIOS = [
-    #         ["Umbedingt", "Das wollen wir unbendingt machen"],
-    #         ["Sehr Gerne", "Das würden wir sehr gerne machen"],
-    #         ["Gerne", "Das würden wir gerne machen"],
-    #         ["Neutral"],
-    #         ["Lieber nicht", "Das wollen wir nicht machen"]
-    #     ]
-    #     for ip, p in enumerate(PRIOS):
-    #         for pp in  p:
-    #             df.replace(pp, str(ip+1), inplace=True)
-        
-    #     for column in df.columns:
-    #         print(f"{column}: \033[1m{df.loc[0, column]}\033[0m")
-
-    # def load_blocklist(self, path="data", filename="PRG_Blockliste.xlsx"):
-    #     df = pd.read_excel(os.path.join(path, filename), sheet_name="On-Site Buchbar")
-    #     df = df[[
-    #         'Block Nr.',
-    #         'Off-Site', 
-    #         'Block- Titel',
-    #         'Ort', 
-    #         'Programmstruktur', 
-    #         'On-Site', 'Off-Site.1',
-    #         'Blockdauer', 
-    #         'Blockart J+S', 
-    #         'Stufe', 
-    #         'Gruppengrösse', 
-    #         'Partizipation',
-    #         'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
-    #         'geschätzte Anzahl Durchführungen'
-    #     ]]
-
-    #     df.columns = [
-    #         'ID',
-    #         'typ', 
-    #         'name',
-    #         'ort', 
-    #         'betr_unbetr', 
-    #         'tags_onsite', 'tags_offsite',
-    #         'dauer', 
-    #         'blockart_J_S', 
-    #         'stufen', 
-    #         'gruppengroesse', 
-    #         'mix_units',
-    #         'max_durchführungen',
-    #         'est_durchführungen'
-    #     ]
-    #     df = df.dropna(subset=["ID"])
-
-    #     print(df["stufen"])
-    #     for bd in df.itertuples():
-            
-    #         length = 1
-    #         on_times = [0, 1, 2]
-    #         if bd.dauer == "4h": 
-    #             length = 2
-    #             on_times = [1]
-    #         if bd.dauer == "8h":
-    #             length = 4
-    #             on_times = [0]
-    #         if bd.dauer == "2 Tage":
-    #             length = 7
-    #             on_times = [0]
-            
-    #         self.append_block(
-
-    #             Block(
-    #                 bd.ID,
-    #                 {   "fullname": bd.name,
-    #                     "space": bd.gruppengroesse,
-    #                     "js_type": bd.blockart_J_S,
-    #                     "cat": bd.typ,
-    #                     "group": bd.stufen.split(", ") if type(bd.stufen) == str else bd.stufen,
-    #                     # "group": random.choice([["wo"],["pf"], ["pi"], ["wo", "pf"], ["pf", "pi"], ["wo", "pf", "pi"]]),
-    #                     "length": length,
-    #                     # "on_days": [0, 1, 2, 3, 4, 5, 6],
-    #                     "on_times": on_times
+    def collect_high_prio_units(self):
+        for block in self.BLOCKS:
+            block.high_prio_units = []
+            for unit in self.UNITS:
+                for prio, value in unit.prios.items():
+                    if prio == block.ID and value >= 2:
+                        block.high_prio_units.append(unit)
                         
-    #                 }
-    #             )
-    #         )
-
-
-
+    def get_verteilungsprio_block(self, p=1):
+        blocks = []
+        for block in self.BLOCKS:
+            if "verteilungsprio" in block.data and block.data["verteilungsprio"] and str(p) in str(block.data["verteilungsprio"]):
+                blocks.append(block)
+        return blocks
 
     def load_example_blocklist(self, N = 10):
         random.seed(41)
@@ -1226,7 +1154,6 @@ class Allocation:
             file.write(f"{b.min():3.0f}, {b.max():3.0f}, {b.std():5.2f}, ")
             file.write(f"{str(c)}")
             file.write(f"{runtime:5.2f} s\n")
-
 
 def id_from_block(block):
 
