@@ -113,7 +113,7 @@ class Schedule:
         self.set_entry(block, slot)
         block.schedule.set_entry(self.owner, slot)
         for kc_slot in Schedule.next_N_slots(slot, block.data["length"] -1):
-            block.set_unit(KC_block, kc_slot)
+            block.set_unit(KC_unit, kc_slot)
         
         if hasattr(block, "twin_block") and block.twin_block:
             block.twin_block.schedule.set_entry(KC_unit, slot)
