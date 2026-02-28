@@ -7,6 +7,7 @@ import subprocess
 import datetime
 import os
 import pandas as pd
+import numpy as np
 
 from Wählbär import MetaBlock, Schedule, Block, Unit, Allocation, SLOTS_PER_DAY, DAYS
 import matplotlib.pyplot as plt
@@ -64,16 +65,19 @@ def export_to_pdf(unit):
             block = unit.schedule[slot]
             placeholder_ID = "{"+ f"{slot}_id"+ "}"
             placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
-     
             if len(block) == 1:
                 block = block[0]
+                fulname_text = block.data["fullname"]
+                
                 id_short = block.ID.split("_")[0] # remove ON-11_XYZ -> ON-11
                 if id_short in ["ON-01", "ON-40", "ON-41", "ON-42", "ON-43"]:
                     id_short += "*"
                 if id_short[:3] == "OFF":
                     id_short +="**"
+                if id_short[:6] == "OTH-DU":
+                    fulname_text = f"Dusche: {dusche_time(slot, block.ID)}"
                 replace_text_in_document(doc, placeholder_ID, id_short)
-                replace_text_in_document(doc, placeholder_fullname, block.data["fullname"])
+                replace_text_in_document(doc, placeholder_fullname, fulname_text)
             elif len(block) == 0:
                 replace_text_in_document(doc, placeholder_ID, "")
                 replace_text_in_document(doc, placeholder_fullname, "")
@@ -89,7 +93,7 @@ def export_to_pdf(unit):
 
     for placeholder, value in { # TODO
     "{name}": unit.fullname,
-    "{date}": datetime.datetime.now().date().strftime("%d.%m.%Y"),
+    "{date}": datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
     "{ID}": str(unit.ID),
     "{group}": group_map.get(unit.group, "Unbekannt"),
     "{B1_id}": "TEST"}.items():
@@ -142,6 +146,16 @@ def export_to_pdf(unit):
         "--outdir", "exports",
         f"exports/{unit.ID}.docx"
     ])
+
+def dusche_time(slot, block_ID):
+    time = Schedule.to_idx(slot)[1]
+    sub = int(block_ID.split("_")[1]) -1
+    return [
+        ["09:30-10:00", "10:00-10:30", "10:30-11:00", "11:00-11:30"],
+        ["13:30-14:00", "14:00-14:30", "14:30-15:00", "15:00-15:30"],
+        ["16:00-16:30", "16:30-17:00", "17:00-17:30", "17:30-18:00"],
+        ["19:00-19:30", "19:30-20:00", "20:00-20:30", "20:30-21:00"]
+    ][time][sub]
 
 
 def replace_text_in_paragraph(paragraph, placeholder, replacement):
@@ -676,3 +690,83 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
 
     workbook.close()
 
+
+def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
+    workbook = pd.ExcelFile(os.path.join(path, filename))
+    for sheet_name in workbook.sheet_names:
+        if len(sheet_name.split("-")) == 2:
+            continue
+        
+        print(f"\rReading unit sheet {sheet_name}...", end="", flush=True)
+
+        df = get_df_from_sheet_name(workbook, sheet_name)   
+
+        unit = a.get_unit_by_ID(sheet_name)
+        for item in get_list_from(df):
+            block = a.get_block_by_ID(item["element"])
+            unit.schedule.set_entry(block, item["slot"]) # set all blocks to units
+        # print(f"Read {len(unit.schedule.get_list())} items for unit {sheet_name}")
+
+    for sheet_name in workbook.sheet_names:
+        if not len(sheet_name.split("-")) == 2:
+            continue
+
+        print(f"\rReading and testing block {sheet_name}...", end="", flush=True)
+        df = get_df_from_sheet_name(workbook, sheet_name)
+
+        block = a.get_block_by_ID(sheet_name)
+        for item in get_list_from(df):
+            unit = a.get_unit_by_ID(item["element"])
+            block.schedule.set_entry(unit, item["slot"]) # set all units to blocks
+            
+            if block not in unit.schedule[item["slot"]]: # test if block is actually in unit schedule for this slot, otherwise print warning and add it
+                print(f"\n{FORMAT.RED}WARNUNG: Einheit {unit.ID} hat nicht Block {block.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}", end="\n")
+                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                    unit.schedule.set_entry(block, item["slot"])
+    print("")
+    for sheet_name in workbook.sheet_names:
+        if len(sheet_name.split("-")) == 2:
+            continue
+        
+        print(f"\rTesting if unit {sheet_name:>4} has correct schedule...", end="", flush=True) 
+        df = get_df_from_sheet_name(workbook, sheet_name)
+
+        unit = a.get_unit_by_ID(sheet_name)
+        for item in get_list_from(df):
+            block = a.get_block_by_ID(item["element"])
+            if unit not in block.schedule[item["slot"]]:
+                print(f"\n{FORMAT.RED}WARNUNG: Block {block.ID} hat nicht Einheit {unit.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}", end="\n")
+                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                    unit.schedule.set_entry(block, item["slot"])
+    print("")
+
+
+def get_df_from_sheet_name(wb, sn):
+    df = pd.read_excel(wb, sheet_name=sn, header=1)
+    df.columns = ["slot", *range(0, 14)]
+    df.drop(["slot"], axis=1, inplace=True)
+    return df
+
+def get_list_from(df):
+    result = []
+    for day in range(DAYS):
+            for time in range(SLOTS_PER_DAY):
+                # cell = chr(day + 1+65) + str(time +3)
+                value = df.loc[time, day]
+                if pd.isna(value):
+                    continue
+                if type(value) == np.float64:
+                    value = str(int(value))
+                # print(value, type(value))
+                for e in value.split("/"): # allow multiple blocks per slot
+                    if e.strip():
+                        result.append({
+                            "slot": Schedule.idx2str(day, time),
+                            "element": e.strip()
+                        })
+    return result
+
+def slot_to_date(slot):
+    day, time = Schedule.to_idx(slot)
+    time_map = {0: "Vormittag", 1: "Nachmittag 1", 2: "Nachmittag 2", 3: "Abend", 4: "Nacht"}
+    return f"{day+12}.07. {time_map[time]}"
