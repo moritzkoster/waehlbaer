@@ -1,5 +1,5 @@
 from Wählbär import Allocation, Schedule
-from IO import export_to_pdf, read_from_xlsx, load_blocklist, load_unitlist
+from IO import export_to_pdf, export_block_to_pdf, read_from_xlsx, load_blocklist, load_unitlist
 
 def main():
     a = Allocation(1)
@@ -41,6 +41,22 @@ def CLI(allocation):
                     print(f"  Slot {slot['slot']}: {slot['element'].ID}")
             else:
                 print(f"Einheit mit ID '{unit_id}' nicht gefunden.")
+        elif user_input.startswith("xb ") and user_input != "xb all":
+            block_id = user_input[3:].strip()
+            block = allocation.get_block_by_ID(block_id)
+            if block:
+                print(f"Export block {block.ID} ({block.data['fullname']}):")
+                export_block_to_pdf(block)
+            else:
+                print(f"Block mit ID '{block_id}' nicht gefunden.")
+        elif user_input.startswith("xb all"):
+            for block in allocation.BLOCKS:
+                if block.is_active:
+                    print(f"Export block {block.ID} ({block.data['fullname']})...",)
+                    export_block_to_pdf(block)
+                else:
+                    print(f"Block {block.ID} ({block.data['fullname']}) ist inaktiv, überspringe...")
+
 
 
 def add_dusche_series(allocation):

@@ -148,6 +148,64 @@ def export_to_pdf(unit):
         f"exports/{unit.ID}.docx"
     ])
 
+def export_block_to_pdf(block):
+    doc = Document("templates/template_block.docx")
+    doc.core_properties.author = "made with Wählbär"
+    replace_text_in_document(doc, "{ID}", block.ID)
+    replace_text_in_document(doc, "{name}", block.data["fullname"])
+    replace_text_in_document(doc, "{cat}", block.data["cat"])
+
+    for day in range(DAYS):
+        for time in range(SLOTS_PER_DAY):
+            slot = Schedule.idx2str(day, time)
+            units = block.schedule[slot]
+            placeholder_ID = "{"+ f"{slot}_id"+ "}"
+            placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
+            if len(units) == 0:
+                replace_text_in_document(doc, placeholder_ID, "")
+                # replace_text_in_document(doc, placeholder_fullname, "")
+                continue
+            IDs = [unit.ID for unit in units]
+            s = ", ".join(IDs)
+            replace_text_in_document(doc, placeholder_ID, s)
+            # replace_text_in_document(doc, placeholder_fullname, fulname_text)
+    
+    group_colors = {
+        "wo": "#00b48f",
+        "pf": "#4f2c1d",
+        "pi": "#c6464a",
+        "pt": "#e87928"
+    }
+
+
+    for entry in block.schedule.get_list(with_slot=True):
+        slot = entry["slot"]
+        next_N_slots = Schedule.next_N_slots(slot, block.data["length"]-1)
+
+        for slot in [slot, *next_N_slots]:
+            tab, row, col = slot_to_table_idx(slot)
+       
+            table = doc.tables[tab]
+    
+            # Access the cell (e.g., first row, first column)
+            cell = table.cell(row, col)
+
+            # Set the background color of the cell
+            shading_elm = OxmlElement('w:shd')
+            shading_elm.set(qn('w:fill'), group_colors.get(entry["element"].group, "#808080"))  # default white color
+            cell._tc.get_or_add_tcPr().append(shading_elm)
+
+    
+    doc.save(f"exports/{block.ID}.docx")
+
+    subprocess.run([
+        "libreoffice",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", "exports",
+        f"exports/{block.ID}.docx"
+    ])
+
 def dusche_time(slot, block_ID):
     time = Schedule.to_idx(slot)[1]
     sub = int(block_ID.split("_")[1]) -1
@@ -697,18 +755,19 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
 
     unit_names = [sheet_name for sheet_name in workbook.sheet_names if not len(sheet_name.split("-")) == 2]
     block_names = [sheet_name for sheet_name in workbook.sheet_names if len(sheet_name.split("-")) == 2]
+
     for unit_n in unit_names:
         if not a.get_unit_by_ID(unit_n):
             print(f"{FORMAT.RED}WARNING: Unit {unit_n} in xlsx not found in allocation.{FORMAT.RESET}")
             if input("create? [y/n]: ").lower() == "y":
-                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "group":"X", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+                group = ["wo", "pf", "pi", "pt"][int(unit_n[0]) -1]
+                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "group":group, "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
     
     for block_n in block_names:
         if not a.get_block_by_ID(block_n):
             print(f"{FORMAT.RED}WARNING: Block {block_n} in xlsx not found in allocation.{FORMAT.RESET}")
             if input("create? [y/n]: ").lower() == "y":
-                a.append_block(Block(block_n, {"fullname": "X", "cat": "X", "js_type": "none", "space": -1, "length": 1, "group": ["wo", "pf", "pi", "X"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False})
-)
+                a.append_block(Block(block_n, {"fullname": "X", "cat": "X", "js_type": "none", "space": -1, "length": 1, "group": ["wo", "pf", "pi", "X"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False}))
 
     for unit_n in unit_names:
       
