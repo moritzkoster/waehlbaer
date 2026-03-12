@@ -12,7 +12,7 @@ def main():
     add_bogenscheissen_series(a)
     add_feuerwehr_series(a)
 
-    read_from_xlsx(a)
+    read_from_xlsx(a, filename="PRG_Programmzuteilung_allocation.xlsx")
 
     CLI(a)
 

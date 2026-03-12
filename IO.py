@@ -75,7 +75,8 @@ def export_to_pdf(unit):
                 if id_short[:3] == "OFF":
                     id_short +="**"
                 if id_short[:6] == "OTH-DU":
-                    fulname_text = f"Dusche: {dusche_time(slot, block.ID)}"
+                    id_short = "Dusche"
+                    fulname_text = f"Zeit: {dusche_time(slot, block.ID)}"
                 replace_text_in_document(doc, placeholder_ID, id_short)
                 replace_text_in_document(doc, placeholder_fullname, fulname_text)
             elif len(block) == 0:
@@ -693,28 +694,41 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
 
 def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
     workbook = pd.ExcelFile(os.path.join(path, filename))
-    for sheet_name in workbook.sheet_names:
-        if len(sheet_name.split("-")) == 2:
-            continue
+
+    unit_names = [sheet_name for sheet_name in workbook.sheet_names if not len(sheet_name.split("-")) == 2]
+    block_names = [sheet_name for sheet_name in workbook.sheet_names if len(sheet_name.split("-")) == 2]
+    for unit_n in unit_names:
+        if not a.get_unit_by_ID(unit_n):
+            print(f"{FORMAT.RED}WARNING: Unit {unit_n} in xlsx not found in allocation.{FORMAT.RESET}")
+            if input("create? [y/n]: ").lower() == "y":
+                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "group":"X", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+    
+    for block_n in block_names:
+        if not a.get_block_by_ID(block_n):
+            print(f"{FORMAT.RED}WARNING: Block {block_n} in xlsx not found in allocation.{FORMAT.RESET}")
+            if input("create? [y/n]: ").lower() == "y":
+                a.append_block(Block(block_n, {"fullname": "X", "cat": "X", "js_type": "none", "space": -1, "length": 1, "group": ["wo", "pf", "pi", "X"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False})
+)
+
+    for unit_n in unit_names:
+      
         
-        print(f"\rReading unit sheet {sheet_name}...", end="", flush=True)
+        print(f"\rReading unit sheet {unit_n}...", end="", flush=True)
 
-        df = get_df_from_sheet_name(workbook, sheet_name)   
+        df = get_df_from_sheet_name(workbook, unit_n)   
 
-        unit = a.get_unit_by_ID(sheet_name)
+        unit = a.get_unit_by_ID(unit_n)
         for item in get_list_from(df):
             block = a.get_block_by_ID(item["element"])
             unit.schedule.set_entry(block, item["slot"]) # set all blocks to units
-        # print(f"Read {len(unit.schedule.get_list())} items for unit {sheet_name}")
+        # print(f"Read {len(unit.schedule.get_list())} items for unit {unit_n}")
 
-    for sheet_name in workbook.sheet_names:
-        if not len(sheet_name.split("-")) == 2:
-            continue
+    for block_n in block_names:
 
-        print(f"\rReading and testing block {sheet_name}...", end="", flush=True)
-        df = get_df_from_sheet_name(workbook, sheet_name)
+        print(f"\rReading and testing block {block_n}...", end="", flush=True)
+        df = get_df_from_sheet_name(workbook, block_n)
 
-        block = a.get_block_by_ID(sheet_name)
+        block = a.get_block_by_ID(block_n)
         for item in get_list_from(df):
             unit = a.get_unit_by_ID(item["element"])
             block.schedule.set_entry(unit, item["slot"]) # set all units to blocks
@@ -724,14 +738,11 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                 if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
                     unit.schedule.set_entry(block, item["slot"])
     print("")
-    for sheet_name in workbook.sheet_names:
-        if len(sheet_name.split("-")) == 2:
-            continue
-        
-        print(f"\rTesting if unit {sheet_name:>4} has correct schedule...", end="", flush=True) 
-        df = get_df_from_sheet_name(workbook, sheet_name)
+    for unit_n in unit_names:
+        print(f"\rTesting if unit {unit_n:>4} has correct schedule...", end="", flush=True) 
+        df = get_df_from_sheet_name(workbook, unit_n)
 
-        unit = a.get_unit_by_ID(sheet_name)
+        unit = a.get_unit_by_ID(unit_n)
         for item in get_list_from(df):
             block = a.get_block_by_ID(item["element"])
             if unit not in block.schedule[item["slot"]]:
