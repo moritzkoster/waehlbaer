@@ -23,41 +23,69 @@ def CLI(allocation):
         user_input = input("> ").strip()
         if user_input.lower() in ["exit", "quit", "q"]:
             break
-        if user_input.startswith("xe ") and user_input != "xe all":
-            unit_id = user_input[3:].strip()
-            unit = allocation.get_unit_by_ID(unit_id)
-            if unit:
-                export_to_pdf(unit)
-            else:
-                print(f"Einheit mit ID '{unit_id}' nicht gefunden.")
-        elif user_input.startswith("xe all"):
-            export(allocation)
-        elif user_input.startswith("le "):
-            unit_id = user_input[3:].strip()
-            unit = allocation.get_unit_by_ID(unit_id)
-            if unit:
-                print(f"Liste Einheit {unit.ID}:")
-                for slot in unit.schedule.get_list(with_slot=True):
-                    print(f"  Slot {slot['slot']}: {slot['element'].ID}")
-            else:
-                print(f"Einheit mit ID '{unit_id}' nicht gefunden.")
-        elif user_input.startswith("xb ") and user_input != "xb all":
-            block_id = user_input[3:].strip()
-            block = allocation.get_block_by_ID(block_id)
-            if block:
-                print(f"Export block {block.ID} ({block.data['fullname']}):")
-                export_block_to_pdf(block)
-            else:
-                print(f"Block mit ID '{block_id}' nicht gefunden.")
-        elif user_input.startswith("xb all"):
-            for block in allocation.BLOCKS:
-                if block.is_active:
-                    print(f"Export block {block.ID} ({block.data['fullname']})...",)
-                    export_block_to_pdf(block)
-                else:
-                    print(f"Block {block.ID} ({block.data['fullname']}) ist inaktiv, überspringe...")
+        cmd = user_input.split(" ")[0].lower()
+        args = user_input[len(cmd):].strip().split(" ") if len(user_input) > len(cmd) else []
 
-
+        if cmd == "xe":
+            if args and args[0].lower() == "all":
+                export(allocation)
+            elif args:
+                for unit_id in args:
+                    unit = allocation.get_unit_by_ID(unit_id)
+                    if unit:
+                        export_to_pdf(unit)
+                    else:
+                        print(f"Einheit mit ID '{unit_id}' nicht gefunden.")
+            else:
+                print("Bitte gib eine Einheit-ID oder 'all' an, z.B. 'xe 123' oder 'xe all'.")
+        
+        elif cmd == "le":
+            if args:
+                for unit_id in args:
+                    unit = allocation.get_unit_by_ID(unit_id)
+                    if unit:
+                        print(f"Liste Einheit {unit.ID}:")
+                        for slot in unit.schedule.get_list(with_slot=True):
+                            print(f"  Slot {slot['slot']}: {slot['element'].ID}")
+                    else:
+                        print(f"Einheit mit ID '{unit_id}' nicht gefunden.")
+            else:
+                print("Bitte gib eine oder mehrere Einheit-ID an, z.B. 'le 123'.")
+        
+        elif cmd == "lb":
+            if args:
+                for block_id in args:
+                    block = allocation.get_block_by_ID(block_id)
+                    if block:
+                        print(f"Block {block.ID} ({block.data['fullname']}):")
+                        for slot in block.schedule.get_list(with_slot=True):
+                            print(f"  Slot {slot['slot']}: {slot['element'].ID}")
+                    else:
+                        print(f"Block mit ID '{block_id}' nicht gefunden.")
+            else:
+                print("Bitte gib eine oder mehrere Block-ID an, z.B. 'lb ON-05'.")
+        
+        elif cmd == "xb":
+            if args and args[0].lower() == "all":
+                for block in allocation.BLOCKS:
+                    if block.is_active:
+                        print(f"Export block {block.ID} ({block.data['fullname']})...",)
+                        export_block_to_pdf(block)
+                    else:
+                        print(f"Block {block.ID} ({block.data['fullname']}) ist inaktiv, überspringe...")
+            elif args:
+                for block_id in args:
+                    block = allocation.get_block_by_ID(block_id)
+                    if block:
+                        print(f"Export block {block.ID} ({block.data['fullname']}):")
+                        export_block_to_pdf(block)
+                    else:
+                        print(f"Block mit ID '{block_id}' nicht gefunden.")
+            else:
+                print("Bitte gib eine Block-ID oder 'all' an, z.B. 'xb ON-05' oder 'xb all'.")
+        
+        else:
+            print("Unbekannter Befehl. Bitte versuche es erneut [xe|le|lb|xb].")
 
 def add_dusche_series(allocation):
     allocation.generate_block_series(
