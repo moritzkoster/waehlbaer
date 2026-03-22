@@ -347,8 +347,9 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
     tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
     non_empty_count = tn_numbers.iloc[:, 0].count() +1
     tn_numbers = tn_numbers.head(non_empty_count)
-    tn_numbers = tn_numbers[["ID", "Verantwortliche Abteilung", "Teilnehmende", "Betreuungsperson", "Datum"]]
-    tn_numbers = tn_numbers.astype({"ID": "string"}).set_index("ID")
+    tn_numbers = tn_numbers[["ID", "Beteiligte Abteilungen", "Teilnehmende", "Betreuungsperson", "Datum", "Leitende"]]
+    tn_numbers["ID"] = tn_numbers["ID"].astype("Int64").astype("string")
+    tn_numbers = tn_numbers.set_index("ID")
 
     for df_ in [df_pi, df_pf, df_wo]:
         for i in range(df_.shape[0]):
@@ -361,7 +362,8 @@ def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx
                 data["fullname"] = "UNKNOWN"
             else:  
                 data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
-                data["fullname"] = tn_numbers.loc[ID, "Verantwortliche Abteilung"]
+                data["n_leaders"] = tn_numbers.loc[ID, "Leitende"]
+                data["fullname"] = tn_numbers.loc[ID, "Beteiligte Abteilungen"]
             if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
                 data["present_on"] = [e-12 for e in range(12, 25+1)] # -12 to convert to wählbär day (12.7. is Day 0)
             if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
@@ -757,11 +759,16 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
     block_names = [sheet_name for sheet_name in workbook.sheet_names if len(sheet_name.split("-")) == 2]
 
     for unit_n in unit_names:
+        
+        if unit_n == "419":
+            a.append_unit(Unit("419", {"fullname": "Pfadi Peter & Paul", "n_people": 2, "n_leaders": 0, "group":"pt", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+            continue
+        
         if not a.get_unit_by_ID(unit_n):
             print(f"{FORMAT.RED}WARNING: Unit {unit_n} in xlsx not found in allocation.{FORMAT.RESET}")
             if input("create? [y/n]: ").lower() == "y":
                 group = ["wo", "pf", "pi", "pt"][int(unit_n[0]) -1]
-                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "group":group, "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "n_leaders": -1, "group":group, "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
     
     for block_n in block_names:
         if not a.get_block_by_ID(block_n):
@@ -810,6 +817,104 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                     unit.schedule.set_entry(block, item["slot"])
     print("")
 
+def export_TN_overwiew_to_xlsx(allocation, fname="TN_Overview.xlsx", path="exports"):
+    workbook = xls.Workbook(os.path.join(path,fname))
+    worksheet = workbook.add_worksheet("TN Overview")
+    merge_format = workbook.add_format(
+        {
+            "bold": 1,
+            "border": 0,
+            "align": "center",
+            "valign": "vcenter",
+            # "fg_color": "yellow",
+        }
+    )
+    worksheet.merge_range("A1:E1", f"Teilnehmerübersicht", merge_format)
+    worksheet.write("A3", "ID")
+    worksheet.write("B3", "Name")
+    
+    for i in range(1, DAYS):
+        start = i*SLOTS_PER_DAY + -2
+        stop = (i+1)*SLOTS_PER_DAY -1 + -2
+        worksheet.merge_range(f"{column_number_to_letter(start)}2:{column_number_to_letter(stop)}2", f"{i+12}.07.")
+        
+        for j in range(SLOTS_PER_DAY):
+            worksheet.write(f"{column_number_to_letter(start + j)}3", ["VM", "NM1", "NM2", "AB", "NA"][j])
+
+            # set column with to 0.8
+            worksheet.set_column(f"{column_number_to_letter(start + j)}:{column_number_to_letter(start + j)}", 3)
+
+    worksheet.write("BP3", "TOTAL")
+    row = 4
+    block_stats = {}
+
+    color_pf = workbook.add_format({"bg_color": "#9c8566"})
+    color_wo = workbook.add_format({"bg_color": "#0db3bb"})
+    color_pi = workbook.add_format({"bg_color": "#c51f1f"})   
+    
+    for block in allocation.BLOCKS:
+        if isinstance(block, MetaBlock):
+            continue
+        
+        if not block.is_active: # only export active blocks
+            continue
+        
+        worksheet.write(f"A{row}", block.ID)
+        worksheet.write(f"B{row}", block.data["fullname"])
+        worksheet.write(f"B{row+1}", "TN")
+        worksheet.write(f"B{row+2}", "Leitende")
+        worksheet.write(f"B{row+3}", "Gesamt")
+        block_stats[block.ID] = {"tn": 0, "leaders": 0, "runs": 0, "total": 0}
+        
+        for day in range(1, DAYS):
+            for time in range(SLOTS_PER_DAY):
+                slot = Schedule.idx2str(day, time)
+                if block.schedule[slot] == []:
+                    continue
+                
+                col = column_number_to_letter(day*SLOTS_PER_DAY + time -2)
+                if block.schedule[slot][0].group == "pf":
+                    fmt = color_pf
+                elif block.schedule[slot][0].group == "wo":
+                    fmt = color_wo
+                elif block.schedule[slot][0].group == "pi":
+                    fmt = color_pi
+                else:
+                    fmt = None
+                worksheet.write(f"{col}{row}", ", ".join([unit.ID for unit in block.schedule[slot]]), fmt) 
+            
+                tn = sum([unit.n_people for unit in block.schedule[slot]])
+                leaders = sum([unit.n_leaders for unit in block.schedule[slot]])
+                worksheet.write(f"{col}{row+1}", tn)
+                worksheet.write(f"{col}{row+2}", leaders)
+                worksheet.write(f"{col}{row+3}", tn + leaders)
+                
+                block_stats[block.ID]["tn"] += tn
+                block_stats[block.ID]["leaders"] += leaders
+                block_stats[block.ID]["total"] += tn + leaders
+                block_stats[block.ID]["runs"] +=1
+
+
+        
+        worksheet.write(f"BP{row}", block_stats[block.ID]["runs"])
+        worksheet.write(f"BP{row+1}", block_stats[block.ID]["tn"])
+        worksheet.write(f"BP{row+2}", block_stats[block.ID]["leaders"])
+        worksheet.write(f"BP{row+3}", block_stats[block.ID]["total"])
+        row += 4
+
+    workbook.close()
+
+def column_number_to_letter(col):
+    """
+    Convert a column number (1-indexed) to Excel column letters.
+    Examples: 1 -> 'A', 26 -> 'Z', 27 -> 'AA', 702 -> 'ZZ', 703 -> 'AAA'
+    """
+    result = ""
+    while col > 0:
+        col -= 1  # Adjust for 1-indexing
+        result = chr(col % 26 + ord('A')) + result
+        col //= 26
+    return result
 
 def get_df_from_sheet_name(wb, sn):
     df = pd.read_excel(wb, sheet_name=sn, header=1)

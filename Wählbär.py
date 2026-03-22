@@ -547,6 +547,7 @@ class Unit:
         self.ID = ID
         self.fullname = data["fullname"]; del data["fullname"]
         self.n_people = data["n_people"]; del data["n_people"]
+        self.n_leaders = data["n_leaders"]; del data["n_leaders"]
 
         
         self.contact = data["contact"]; del data["contact"]
@@ -920,7 +921,7 @@ class Allocation:
         KC_block = Block("AUX-KC", {"fullname": "KEEP CLEAR", "cat": "AUX", "js_type": "None", "space": 9999, "length": 1, "group": ["wo", "pf", "pi"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False})
 
         global KC_unit
-        KC_unit = Unit("KC", {"fullname": "KEEP CLEAR", "n_people": 0, "group":"wo", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []})
+        KC_unit = Unit("KC", {"fullname": "KEEP CLEAR", "n_people": 0, "n_leaders": 0, "group":"wo", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []})
 
 
     def evaluate(self, alloc_func):
