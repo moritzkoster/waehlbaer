@@ -1,6 +1,6 @@
 from Wählbär import Schedule, Unit, Block, Allocation, random, test_random_seed
 
-from Utils import print_schedule
+from IO import print_schedule
 
 import json
 

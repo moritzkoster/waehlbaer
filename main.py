@@ -1,97 +1,508 @@
 from Wählbär import Allocation, Schedule
 import multiprocessing as mp
 import time
+import random
 
-from Utils import print_schedule, write_to_xlsx
+from IO import print_schedule, write_to_xlsx, load_blocklist, load_unitlist, FORMAT, export_to_pdf
 
-NUM_PROCESSES = 8
+# RED = "\033[31m"
+# YELLOW = "\033[33m"
+# GREEN = "\033[32m"
+# BOLD = "\033[1m"
+# RESET = "\033[0m"
 
-# sample random blocks of top n choices, no backtracing
-def the_magic_allocation_function(allocation):
-    for ir in range(15):
-        allocation.UNITS = sorted(allocation.UNITS, key=lambda e: e.score())
-        for unit in allocation.UNITS:
-            for tries in range(10):
+def allocate_cat(a, cat, print_enabled=False):  
+    for unit in a.UNITS:
+        if unit.general[cat]:
+            unmatched = unit.get_all_unmatched_by_cat(cat)
+            if unmatched:
+                for prio in unmatched:
+                    if prio["value"] >= 0:
+                        block = a.get_block_by_ID(prio["ID"])
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
+            
+def allocate_block(a, blockID, print_enabled=False):
+    block = a.get_block_by_ID(blockID)
+    for unit in a.UNITS: 
+        assigned = try_assign(unit, block, print_enabled)
 
-                hp = allocation.random.choice(unit.highest_unmatched_prios(N=6))
-                if not hp:
+def allocate_block_vp_first(a, blockID, print_enabled=False):
+    block = a.get_block_by_ID(blockID)
+    a.UNITS = sorted(a.UNITS, key=lambda u: u.prios[block.ID], reverse=True)
+    for unit in a.UNITS:
+        if unit.prios.get(block.ID, 0) >= 0:
+            assigned = try_assign(unit, block, print_enabled)
+
+
+def allocate_flussbaden(allocation, print_enabled=False): # TODO
+    for unit in allocation.UNITS:
+        if unit.general["flussbaden"]:
+            for ID in ["OFF-21", "OFF-22", "OFF-23"]:
+                block = allocation.get_block_by_ID(ID)  
+                assigned = try_assign(unit, block, print_enabled)
+                if assigned:
                     break
-                block = allocation.get_block_by_name(hp["name"])
-                block_slots = block.search_slots({"space": unit.nPeople})
-                unit_slots = unit.search_slots(block)
-                matching = Schedule.matching_slots(unit_slots, block_slots)
-                if matching:
-                    unit.set_block(block, str(allocation.random.choice(matching)))
-                    break
 
-# ich glaub die isch ned ganz richtig, aber mengmal gits absolut insane gueti performance
-# score vo 0.96 in 2s, fasch scho verdächtig guet 
-def more_magic_recursive_allocation_function(allocation):
-    
-    def recursive_allocator(allocation, unit_idx, rnd):
-        if unit_idx == 0:
-            allocation.UNITS = sorted(allocation.UNITS, key=lambda e: e.score())
-        unit = allocation.UNITS[unit_idx]
+def allocate_nacht(allocation, print_enabled=False):
+    block = allocation.get_block_by_ID("ON-05")  
+    for unit in allocation.UNITS:
+        if not unit.is_nacht_satisfied():
+            assigned = try_assign(unit, block, print_enabled)
 
-        for block_prio in unit.highest_unmatched_prios(4):
-            block = allocation.get_block_by_name(block_prio["name"])
-            block_slots = block.search_slots({"space": unit.nPeople})
-            unit_slots = unit.search_slots()
-            matching = Schedule.matching_slots(unit_slots, block_slots)
-            if matching:
-                for slot in matching:
+def allocate_wald(allocation, print_enabled=False):
+    block = allocation.get_block_by_ID("ON-08")  
+    for unit in allocation.UNITS:
+        if not unit.is_wald_satisfied():
+            assigned = try_assign(unit, block, print_enabled)
 
-                    unit.set_block(block, slot)
-
-                    if unit_idx == len(allocation.UNITS) -1 and rnd == 11:
-                        allocation.save("alc1.json")
-                        return "FINISH" # finish calculation
-                    new_unit_idx, new_rnd = 0, 0
-                    if unit_idx == len(allocation.UNITS) -1:
-                        new_unit_idx = 0
-                        new_rnd = rnd + 1
-                    else: 
-                        new_unit_idx = unit_idx + 1
-                        new_rnd = rnd
-                    
-                    print(f"set for round {rnd} and unit {unit_idx}")
-                    resp = recursive_allocator(allocation, new_unit_idx, new_rnd)
-                    if resp == "FINISH":
-                        return "FINISH"
-                    
-                    print("BACKTRACE")
-                    unit.remove_block(block)
+def allocate_wanderung(allocation, print_enabled=False):
+    for unit in allocation.UNITS:
+        if unit.general["wanderung"]:
+            
+            assigned = False
+            if "ein_zwei" in unit.general and unit.general["ein_zwei"] == "Zweitageswanderung":
+                zt_prios = get_zt_prios(unit)
+                for prio in zt_prios:
+                    block = allocation.get_block_by_ID(prio["ID"])  
+                    assigned = try_assign(unit, block, print_enabled)
+                    if assigned:
+                        break
+                if not assigned:
+                    et_prios = get_et_prios(unit)
+                    for prio in et_prios:
+                        block = allocation.get_block_by_ID(prio["ID"])  
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
             else:
-                print("NO MATCHING")
+                et_prios = get_et_prios(unit)
+                for prio in et_prios:
+                    block = allocation.get_block_by_ID(prio["ID"])  
+                    assigned = try_assign(unit, block, print_enabled)
+                    if assigned:
+                        break
+                if not assigned:
+                    zt_prios = get_zt_prios(unit)
+                    for prio in zt_prios:
+                        block = allocation.get_block_by_ID(prio["ID"])  
+                        assigned = try_assign(unit, block, print_enabled)
+                        if assigned:
+                            break
 
-        return "BACKTRACE"
+
+def get_zt_prios(unit):
+    prios = []
+    for prio in unit.prios_sorted["wanderung"]:
+        if prio["ID"] in ["OFF-17", "OFF-18", "OFF-19"] and prio["value"] >= 0:
+            prios.append({"ID": prio["ID"], "value": prio["value"]})
+    return sorted(prios, key=lambda e: e["value"], reverse=True)
+
+def get_et_prios(unit):
+    prios = []
+    for prio in unit.prios_sorted["wanderung"]:
+        if prio["ID"] in ["OFF-8", "OFF-9", "OFF-10", "OFF-11", "OFF-12", "OFF-13", "OFF-14", "OFF-15", "OFF-16"] and prio["value"] >= 0:
+            prios.append({"ID": prio["ID"], "value": prio["value"]})
+    return sorted(prios, key=lambda e: e["value"], reverse=True)  
+
+def try_assign(unit, block, print_enabled=False):
+    block_result = block.search_slots({"space": unit.n_people, "group": unit.group}, return_reason=True)
+    if not block_result.slots:
+        if print_enabled:
+            print(f"{FORMAT.YELLOW}No block-slots found for block {block.ID} and unit {unit.ID}{FORMAT.RESET}")# N={unit.n_people}, G={unit.group}")
+            print_reasons(block_result)
+        return False
+    unit_result = unit.search_slots(block.data, return_reason=True)
+    if not unit_result.slots:
+        if print_enabled:
+            print(f"{FORMAT.YELLOW}No unit-slots found for unit {unit.ID} and block {block.ID}{FORMAT.RESET}")
+            print_reasons(unit_result)
+        return False
+    matching = Schedule.matching_slots(unit_result.slots, block_result.slots)
+    if matching:
+        if "tags" in block.data and "sauber" in block.data["tags"]:
+            matching = calculate_sauber_distance(unit, matching)
+            matching = sorted(matching, key=lambda e: e["sauber_distance"], reverse=True)
+            slot_to_set = matching[0]
         
-    recursive_allocator(allocation, 0, 1)
+            if matching[0]["sauber_distance"] <=1 and print_enabled:
+                print(f"{FORMAT.RED}Warning: Small distance to other sauber blocks for unit {unit.ID} and block {block.ID}{FORMAT.RESET}")
 
+        elif block.data["cat"] == "wald" or block.data["cat"] == "nacht":
+            large_distance_matching = distance_larger_than(unit, matching, distance=2, cat=block.data["cat"])
+            if not large_distance_matching:
+                large_distance_matching = matching
+                if print_enabled:
+                    print(f"{FORMAT.RED}No matching slots with sufficient distance for block {block.ID} and unit {unit.ID}{FORMAT.RESET}")
+            slot_to_set = random.choice(large_distance_matching)       
+            
+        else:
+            slot_to_set = random.choice(matching)
+        
+        clear_after_slot(slot_to_set, block.data["length"]-1, unit) # clear before setting to not clear the KC blocks again
+        block.set_unit(unit,slot_to_set)
 
+        return True
+    else:
+        if print_enabled:
+            print(f"{FORMAT.YELLOW}No matching slots for block {block.ID} and unit {unit.ID}{FORMAT.RESET}")
+    return False
 
+def sort_by_score(a):
+    a.UNITS = sorted(a.UNITS, key=lambda e: e.score())
+
+def calculate_sauber_distance(unit, matching_slots):
+    matched_with_distances = []
+    for ms in matching_slots:
+        if type(ms) == dict:
+            slot = ms["slot"]
+        else:
+            slot = ms
+        mindist = 99
+        for entry in unit.schedule.get_list(with_slot=True):
+            if "tags" in entry["element"].data and "sauber" in entry["element"].data["tags"]:
+                mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - Schedule.to_idx(entry["slot"])[0]))
+        
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - unit.present_on[0])) # distance to start
+        mindist = min(mindist, abs(Schedule.to_idx(slot)[0] - unit.present_on[-1])) # distance to end
+        if type(ms) == dict:
+            ms["sauber_distance"] = mindist
+            matched_with_distances.append(ms)
+        else:
+            matched_with_distances.append({"slot": slot, "sauber_distance": mindist})
+    return matched_with_distances
+
+def distance_larger_than(unit, slots, distance, cat):
+    return_slots = []
+    for s in slots:
+        if type(s) == dict:
+            sx = s["slot"]
+        else:
+            sx = s
+
+        mindist = 99
+        for entry in unit.schedule.get_list(with_slot=True):
+            if "cat" in entry["element"].data and entry["element"].data["cat"] == cat:
+                dist = abs(Schedule.to_idx(sx)[0] - Schedule.to_idx(entry["slot"])[0])
+                if dist < mindist:
+                    mindist = dist
+        if mindist > distance:
+            return_slots.append(s)
+    return return_slots
+
+def add_freizeit(allocation):
+    block_freizeit = allocation.get_block_by_ID("ON-39")
+    block_freizeit.data["tags"].add("same_day")
+    for unit in allocation.UNITS:
+        if Schedule.to_idx(block_freizeit.data["on_slots"][0])[0] in unit.present_on:
+            unit.set_block(block_freizeit,block_freizeit.data["on_slots"][0])
+        if Schedule.to_idx(block_freizeit.data["on_slots"][1])[0] in unit.present_on:
+            unit.set_block(block_freizeit,block_freizeit.data["on_slots"][1])
+
+def add_pfadifun(allocation):
+    block_pfadifun = allocation.get_block_by_ID("ON-01")
+    block_pfadifun.data["tags"].add("same_day")
+    
+    for unit in allocation.UNITS:
+        if "pfadifun" in unit.general and unit.general["pfadifun"]:
+            unit.set_block(block_pfadifun,block_pfadifun.data["on_slots"][0])
+    
+def add_wolfstrail(allocation):
+    wolfstrail_block = allocation.get_block_by_ID("ON-16")
+    units_first_week = []
+    units_second_week = []
+    for unit in allocation.UNITS:
+        if "wolfstrail" in unit.general and unit.general["wolfstrail"]:
+            if unit.present_on[0] < 3:
+                units_first_week.append(unit)
+            else:
+                units_second_week.append(unit)
+                
+    print(len(units_first_week), len(units_second_week))
+
+    # TODO zuweisen von hand:
+    wolfstrail_block.set_unit(units_first_week[0], "D1")
+    wolfstrail_block.set_unit(units_first_week[1], "D1")
+    wolfstrail_block.set_unit(units_first_week[2], "D1")
+    wolfstrail_block.set_unit(units_first_week[3], "B2")
+    wolfstrail_block.set_unit(units_first_week[4], "B2")
+    wolfstrail_block.set_unit(units_first_week[5], "B2")
+    wolfstrail_block.set_unit(units_first_week[6], "B2")
+    wolfstrail_block.set_unit(units_first_week[7], "B1")
+    wolfstrail_block.set_unit(units_first_week[8], "B1")
+    wolfstrail_block.set_unit(units_first_week[9], "B1")
+    # wolfstrail_block.set_unit(units_first_week[10], "B1")
+
+    # Second week assignments
+    wolfstrail_block.set_unit(units_second_week[0], "L1")
+    wolfstrail_block.set_unit(units_second_week[1], "L1")
+    wolfstrail_block.set_unit(units_second_week[2], "L1")
+    wolfstrail_block.set_unit(units_second_week[3], "I2")
+    wolfstrail_block.set_unit(units_second_week[4], "I2")
+    wolfstrail_block.set_unit(units_second_week[5], "I2")
+    wolfstrail_block.set_unit(units_second_week[6], "I2")
+    wolfstrail_block.set_unit(units_second_week[7], "I1")
+    wolfstrail_block.set_unit(units_second_week[8], "I1")
+    wolfstrail_block.set_unit(units_second_week[9], "I1")
+    wolfstrail_block.set_unit(units_second_week[10], "I1")
+
+def clear_after_slot(start, length, unit):
+    if type(start) == dict:
+        start = start["slot"]
+    for slot in Schedule.next_N_slots(start, N=length): 
+        if unit.schedule[slot]: # if there is a block assigned in this slot
+            unit.remove_block(slot=slot) # clear schedule of unit and block for this slot
         
 
-def allocate_units(allocation):
-    # the_magic_allocation_function(allocation)
-    more_magic_recursive_allocation_function(allocation)
+def abera_kadabera_simsalabim(allocation):
 
-def mp_worker(seed):
-    allocation = Allocation(seed)
-    allocation.load_example_blocklist(80)
-    allocation.load_example_unitlist(80, N_Blocks=80)
-    stime = time.time()
-    allocation.evaluate(allocate_units)
-    run_eval = time.time() - stime
-    allocation.log_stats("log.txt", run_eval)
-    write_to_xlsx(allocation, fname="alc1.xlsx")
+    add_freizeit(allocation)
+    add_pfadifun(allocation)
+    add_wolfstrail(allocation)
+    add_anlässe(allocation)
 
-    return allocation.stats()[0].sum()
+    allocate_wanderung(allocation, print_enabled=False)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "ausflug", print_enabled=False)  
+    sort_by_score(allocation)
+    allocate_cat(allocation, "si-mo",   print_enabled=False) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "workshop", print_enabled=False) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False) 
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "wasser", print_enabled=False)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "workshop", print_enabled=False)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "sportaktivitat", print_enabled=False)
+    
+    for i in range(6): # assigne 6 rounds of wald
+        sort_by_score(allocation)
+        allocate_wald(allocation, print_enabled=False)
+    for i in range(4): # assign 4 rounds of nachtaktivität
+        sort_by_score(allocation)
+        allocate_nacht(allocation, print_enabled=False)
+    
+    for _ in range(3): # assign 3 blocks with flussbaden
+        sort_by_score(allocation)
+        allocate_flussbaden(allocation, print_enabled=False)
+   
 
-seeds = range(1)
+    sort_by_score(allocation) 
+    allocate_cat(allocation, "programmflache", print_enabled=False)
+    sort_by_score(allocation)
+    allocate_cat(allocation, "programmflache", print_enabled=False)
+    sort_by_score(allocation) 
+    allocate_block(allocation, "OTH-DU", print_enabled=False)
+    sort_by_score(allocation)
+    allocate_block(allocation, "OTH-DU", print_enabled=False)
 
-with mp.Pool(processes=NUM_PROCESSES) as pool:
-        # Map the function to the seeds
-        results = pool.map(mp_worker, seeds)
+    allocate_block(allocation, "OTH-AM", print_enabled=False)
+
+    allocation.remve_KC_from_all_blocks() # remove KC from blocks, so that they can be assigned to other units if needed
 
 
+def print_reasons(search_result):
+    print(f" - " + "\n - ".join(search_result.reason))
+
+def add_dusche_series(allocation):
+    allocation.generate_block_series(
+        "OTH-DU", 
+        4, 
+        {
+            "fullname": "Dusche", 
+            "cat": "dusche", 
+            "js_type": "None", 
+            "space": 99, 
+            "length": 1, 
+            "group": ["wo", "pf", "pi"], 
+            "tags": set(["same_day"]), 
+            "on_times": [0, 1, 2, 3],
+            "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "on_slots": ['C0', 'C1', 'C2', 'C3', 'D0', 'D1', 'D2', 'D3', 'E0', 'E1', 'E2', 'E3', 'F0', 'F1', 'F2', 'F3', 'G0', 'G1', 'G2', 'G3', "I0", "I1", "I2", "I3", "J0", "J1", "J2", "J3", "K0", "K1", "K2", "K3", "L0", "L1", "L2", "L3"],
+            "verteilungsprio": 5,
+            "state": "Aktiv",
+            "mix_units": False
+        }
+    )
+
+def add_nacht_series(allocation):
+    main_block = allocation.get_block_by_ID("ON-05")
+    index = allocation.BLOCKS.index(main_block)
+    allocation.BLOCKS.remove(main_block)
+    main_block.data["tags"].add("same_day")
+    allocation.generate_block_series(
+        "ON-05",
+        10,
+        main_block.data,
+        index=index
+    )
+
+def add_wald_series(allocation):
+    main_block = allocation.get_block_by_ID("ON-08")
+    index = allocation.BLOCKS.index(main_block)
+    allocation.BLOCKS.remove(main_block)
+    main_block.data["tags"].add("same_day")
+    allocation.generate_block_series(
+        "ON-08",
+        8,
+        main_block.data,
+        index=index
+    )
+
+def add_feuerwehr_series(allocation):
+    main_block = allocation.get_block_by_ID("OFF-3")
+    index = allocation.BLOCKS.index(main_block)
+    allocation.BLOCKS.remove(main_block)
+    allocation.generate_block_series(
+        "OFF-3",
+        5,
+        main_block.data,
+        index=index
+    )
+
+def add_bogenscheissen_series(allocation):
+    main_block = allocation.get_block_by_ID("OFF-2")
+    index = allocation.BLOCKS.index(main_block)
+    allocation.BLOCKS.remove(main_block)
+    allocation.generate_block_series(
+        "OFF-2",
+        4,
+        main_block.data,
+        index=index
+    )
+
+    allocation.get_block_by_ID("OFF-2_A").data["on_slots"] = ['D1', 'G0']
+    
+    data_afternoon = main_block.data.copy()
+    data_afternoon["on_slots"] = ['G1']
+
+    allocation.get_block_by_ID("OFF-2_B").data = data_afternoon
+    allocation.get_block_by_ID("OFF-2_C").data = data_afternoon
+    allocation.get_block_by_ID("OFF-2_D").data = data_afternoon
+
+def add_anlässe(allocation):
+
+    eroffnungsfeier = allocation.get_block_by_ID("ON-40")
+    schluss_wölfe = allocation.get_block_by_ID("ON-41")
+    eroffnung_wolfe = allocation.get_block_by_ID("ON-42")
+    schlussfeier = allocation.get_block_by_ID("ON-43")
+    anreise_wölfe = allocation.get_block_by_ID("ON-44")
+
+
+    for unit in allocation.UNITS:
+        if unit.present_on[0] < 3:
+            unit.set_block(eroffnungsfeier, eroffnungsfeier.data["on_slots"][0])
+        if unit.group == "wo" and unit.present_on[0] < 3:
+            unit.set_block(schluss_wölfe, schluss_wölfe.data["on_slots"][0])
+        if unit.group == "wo" and unit.present_on[0] > 3: # only assign eroffnung_wolfe to wölfe who are present in the second week, as the block is on day 13
+            unit.set_block(eroffnung_wolfe, eroffnung_wolfe.data["on_slots"][0])
+        if  unit.present_on[-1] > 10: # assign schlussfeier to all units who are present on the day of the schlussfeier, but not to wölfe who are only present in the second week, as they have their own schlussfeier
+            unit.set_block(schlussfeier, schlussfeier.data["on_slots"][0])
+        # if Schedule.to_idx(anreise_wölfe.data["on_slots"][0])[0] in unit.present_on and unit.group == "wo":
+        #     unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][0])
+        # if Schedule.to_idx(anreise_wölfe.data["on_slots"][1])[0] in unit.present_on and unit.group == "wo":
+        #     unit.set_block(anreise_wölfe, anreise_wölfe.data["on_slots"][1])
+
+        
+     
+
+
+def add_amtli_series(allocation):
+    allocation.generate_block_series(
+        "OTH-AM", 
+        0, 
+        {
+            "fullname": "Amtli", 
+            "cat": "amtli", 
+            "js_type": "None", 
+            "space": 99, 
+            "length": 1, 
+            "group": ["wo", "pf", "pi"], 
+            "tags": set(["same_day"]), 
+            "on_times": [0, 1, 2],
+            "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+            "on_slots": ['B0', 'B1', 'B2', 'C0', 'C1', 'C2', 'D0', 'D1', 'D2', 'E0', 'E1', 'E2', 'F0', 'F1', 'F2', 'G0', 'G1', 'G2', "H0", "H1", "H2", "I0", "I1", "I2", "J0", "J1", "J2", "K0", "K1", "K2", "L0", "L1", "L2", "M0", "M1", "M2"],
+            "state": "Aktiv",
+            "verteilungsprio": 5,
+            "mix_units": False
+        }
+    )
+
+
+def twin_blocks(allocation, blockID1, blockID2):
+    block1 = allocation.get_block_by_ID(blockID1)
+    block2 = allocation.get_block_by_ID(blockID2)
+    block1.twin_block = block2
+    block2.twin_block = block1
+
+def export(allocation):
+    total = len(allocation.UNITS)
+    for i, unit in enumerate(allocation.UNITS):
+        print(f"\r({i+1:>3}/{total}) Export PDF for unit {unit.ID} ... ", end="")
+        export_to_pdf(unit)
+
+def main(seed):
+
+    random.seed(seed) # set seed for reproducibility (affects random choices in allocation)
+    allocation = Allocation(seed) # crete allocation with seed for reproducibility (seed is unused in this version)
+
+    load_blocklist(allocation) # load blocks from xlsx
+    load_unitlist(allocation) # load units from xlsx
+    
+    allocation.find_block_cats()
+
+    add_dusche_series(allocation)
+    add_amtli_series(allocation)
+    add_nacht_series(allocation)
+    add_wald_series(allocation)
+    add_feuerwehr_series(allocation)
+    add_bogenscheissen_series(allocation)
+
+    twin_blocks(allocation, "ON-28", "ON-29")
+    twin_blocks(allocation, "ON-36", "ON-37")
+
+    allocation.get_block_by_ID("ON-05").data["cat"] = "nacht"
+    allocation.get_block_by_ID("ON-08").data["cat"] = "wald"    
+    
+    allocation.get_block_by_ID("OFF-21").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-22").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+    allocation.get_block_by_ID("OFF-23").data["tags"].add("same_day") # marke blocks for same day assignment (e.g. for freizeit)
+
+    allocation.collect_high_prio_units()
+    print(allocation.get_verteilungsprio_block(1))
+    
+
+    for i in range(1000):
+    # i = 1  
+        stime = time.time() # save start time for runtime evaluation
+        random.seed(i) # reset seed before allocation to ensure same random choices for each run with the same seed
+        allocation.seed = i # reset allocation to empty state before each run
+        
+        allocation.clear_schedules()
+        
+        abera_kadabera_simsalabim(allocation) # do magic stuff
+
+        run_eval = time.time() - stime # calculate runtime
+        allocation.log_stats("log.txt", run_eval)
+        allocation.print_stats() 
+
+    
+    # write_to_xlsx(allocation) # export allocation to xlsx
+
+    # export(allocation) # export individual schedules to pdf
+    
+
+
+
+    # allocation.save("a1.json") 
+
+
+    # return allocation.stats()[0].sum()
+
+if __name__ == "__main__": 
+    main(1) # exectue main allocation function with seed 1

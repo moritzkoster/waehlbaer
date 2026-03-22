@@ -1,0 +1,947 @@
+from docx import Document
+from docx.shared import RGBColor
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+
+import subprocess
+import datetime
+import os
+import pandas as pd
+import numpy as np
+
+from Wählbär import MetaBlock, Schedule, Block, Unit, Allocation, SLOTS_PER_DAY, DAYS
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import xlsxwriter as xls
+
+class FORMAT:
+    RED = "\033[31m"
+    YELLOW = "\033[33m"
+    GREEN = "\033[32m"
+    BOLD = "\033[1m"
+    RESET = "\033[0m"
+
+
+   
+
+
+def slot_to_table_idx(slot):
+    if type(slot) == str:
+        idx = Schedule.to_idx(slot)
+    elif type(slot) == tuple:
+        idx = slot
+    else:
+        print(f"ERROR: invalid type {type(slot)} expected 'tuple' or 'str'")
+        
+    row = idx[1] +1
+    if idx[0] <= 6:
+        col = idx[0] 
+        return 0, row, col+1
+    else:
+        col = idx[0] -6 
+        return 2, row, col
+
+
+
+def export_to_pdf(unit):
+
+    if unit.group == "pf" or unit.group == "pi":
+        doc = Document("templates/template_unit_pf_pi.docx")
+    elif unit.group == "wo":
+        if unit.present_on[0] <3 :
+            doc = Document("templates/template_unit_wo_w1.docx")
+        else:
+            doc = Document("templates/template_unit_wo_w2.docx")
+    else:
+        print(f"ERROR: unknown group {unit.group} of unit {unit.ID}")
+        doc = Document("templates/template_unit_pf_pi.docx")
+    
+    # doc = Document("templates/template_unit_v2.docx")
+    doc.core_properties.author = "made with Wählbär"
+
+    for day in range(DAYS):
+        for time in range(SLOTS_PER_DAY):
+            slot = Schedule.idx2str(day, time)
+            block = unit.schedule[slot]
+            placeholder_ID = "{"+ f"{slot}_id"+ "}"
+            placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
+            if len(block) == 1:
+                block = block[0]
+                fulname_text = block.data["fullname"]
+                
+                id_short = block.ID.split("_")[0] # remove ON-11_XYZ -> ON-11
+                if id_short in ["ON-01", "ON-40", "ON-41", "ON-42", "ON-43"]:
+                    id_short += "*"
+                if id_short[:3] == "OFF":
+                    id_short +="**"
+                if id_short[:6] == "OTH-DU":
+                    id_short = "Dusche"
+                    fulname_text = f"Zeit: {dusche_time(slot, block.ID)}"
+                replace_text_in_document(doc, placeholder_ID, id_short)
+                replace_text_in_document(doc, placeholder_fullname, fulname_text)
+            elif len(block) == 0:
+                replace_text_in_document(doc, placeholder_ID, "")
+                replace_text_in_document(doc, placeholder_fullname, "")
+            elif len(block) > 1:
+                print(f"ERROR: more than one block in slot {slot} of unit {unit.ID}")
+                for i, block in enumerate(block):
+                    print("  -  ", block.ID)
+    group_map = {
+        "pf": "Pfadis",
+        "pi": "Pios",
+        "wo": "Wölfe"
+    }
+
+    for placeholder, value in { # TODO
+    "{name}": unit.fullname,
+    "{date}": datetime.datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+    "{ID}": str(unit.ID),
+    "{group}": group_map.get(unit.group, "Unbekannt"),
+    "{B1_id}": "TEST"}.items():
+        replace_text_in_document(doc, placeholder, value)
+
+    color_map = {
+        "anlass": "#000000",
+        "ausflug": "#f2c966",
+        "wanderung": "#00b48f",
+        "sportaktivitat": "#c6464a",
+        "programmflache": "#e87928",
+        "wald": "#e87928",
+        "nacht": "#e87928",
+        "wasser": "#608ee4",
+        "flussbaden": "#608ee4",
+        "si-mo": "#608ee4",
+        "dusche": "#608ee4",
+        "workshop": "#4f2c1d",
+    }
+
+
+
+
+    for entry in unit.schedule.get_list(with_slot=True):
+        slot = entry["slot"]
+        next_N_slots = Schedule.next_N_slots(slot, entry["element"].data["length"]-1)
+
+        for slot in [slot, *next_N_slots]:
+            tab, row, col = slot_to_table_idx(slot)
+            if unit.group == "wo" and unit.present_on[0] >= 3: # wölfe have a different template for days 3-12
+                tab -= 2
+            table = doc.tables[tab]
+    
+            # Access the cell (e.g., first row, first column)
+            cell = table.cell(row, col)
+
+            # Set the background color of the cell
+            shading_elm = OxmlElement('w:shd')
+            shading_elm.set(qn('w:fill'), color_map.get(entry["element"].data["cat"], "#808080"))  # default white color
+            cell._tc.get_or_add_tcPr().append(shading_elm)
+
+
+
+    doc.save(f"exports/{unit.ID}.docx")
+
+    subprocess.run([
+        "libreoffice",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", "exports",
+        f"exports/{unit.ID}.docx"
+    ])
+
+def export_block_to_pdf(block):
+    doc = Document("templates/template_block.docx")
+    doc.core_properties.author = "made with Wählbär"
+    replace_text_in_document(doc, "{ID}", block.ID)
+    replace_text_in_document(doc, "{name}", block.data["fullname"])
+    replace_text_in_document(doc, "{cat}", block.data["cat"])
+
+    for day in range(DAYS):
+        for time in range(SLOTS_PER_DAY):
+            slot = Schedule.idx2str(day, time)
+            units = block.schedule[slot]
+            placeholder_ID = "{"+ f"{slot}_id"+ "}"
+            placeholder_fullname = "{"+ f"{slot}_fullname"+ "}"
+            if len(units) == 0:
+                replace_text_in_document(doc, placeholder_ID, "")
+                # replace_text_in_document(doc, placeholder_fullname, "")
+                continue
+            IDs = [unit.ID for unit in units]
+            s = ", ".join(IDs)
+            replace_text_in_document(doc, placeholder_ID, s)
+            # replace_text_in_document(doc, placeholder_fullname, fulname_text)
+    
+    group_colors = {
+        "wo": "#00b48f",
+        "pf": "#4f2c1d",
+        "pi": "#c6464a",
+        "pt": "#e87928"
+    }
+
+
+    for entry in block.schedule.get_list(with_slot=True):
+        slot = entry["slot"]
+        next_N_slots = Schedule.next_N_slots(slot, block.data["length"]-1)
+
+        for slot in [slot, *next_N_slots]:
+            tab, row, col = slot_to_table_idx(slot)
+       
+            table = doc.tables[tab]
+    
+            # Access the cell (e.g., first row, first column)
+            cell = table.cell(row, col)
+
+            # Set the background color of the cell
+            shading_elm = OxmlElement('w:shd')
+            shading_elm.set(qn('w:fill'), group_colors.get(entry["element"].group, "#808080"))  # default white color
+            cell._tc.get_or_add_tcPr().append(shading_elm)
+
+    
+    doc.save(f"exports/{block.ID}.docx")
+
+    subprocess.run([
+        "libreoffice",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", "exports",
+        f"exports/{block.ID}.docx"
+    ])
+
+def dusche_time(slot, block_ID):
+    time = Schedule.to_idx(slot)[1]
+    sub = int(block_ID.split("_")[1]) -1
+    return [
+        ["09:30-10:00", "10:00-10:30", "10:30-11:00", "11:00-11:30"],
+        ["13:30-14:00", "14:00-14:30", "14:30-15:00", "15:00-15:30"],
+        ["16:00-16:30", "16:30-17:00", "17:00-17:30", "17:30-18:00"],
+        ["19:00-19:30", "19:30-20:00", "20:00-20:30", "20:30-21:00"]
+    ][time][sub]
+
+
+def replace_text_in_paragraph(paragraph, placeholder, replacement):
+    for run in paragraph.runs:
+        if placeholder in run.text:
+            # Split the text into parts before, after, and the placeholder
+            split = run.text.split(placeholder)
+            pre = split[0]  # Keep the text before the placeholder
+            post = split[1]
+            
+            run.text = pre + replacement + post  # Keep the text before the placeholder
+            # Add the replacement text with the same style
+            # for part in parts[1:]:
+            #     run = paragraph.add_run(replacement + part)
+            #     # Copy the style from the previous run
+            #     run.bold = paragraph.runs[-2].bold
+            #     run.italic = paragraph.runs[-2].italic
+            #     run.underline = paragraph.runs[-2].underline
+            #     run.font.name = paragraph.runs[-2].font.name
+            #     run.font.size = paragraph.runs[-2].font.size
+            #     run.font.color.rgb = paragraph.runs[-2].font.color.rgb
+
+def replace_text_in_document(doc, placeholder, replacement):
+    for paragraph in doc.paragraphs:
+        replace_text_in_paragraph(paragraph, placeholder, replacement)
+
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for paragraph in cell.paragraphs:
+                    replace_text_in_paragraph(paragraph, placeholder, replacement)
+    
+    for section in doc.sections:
+        # Header
+        if section.header is not None:
+            for paragraph in section.header.paragraphs:
+                replace_text_in_paragraph(paragraph, placeholder, replacement)
+        # Footer
+        if section.footer is not None:
+            for paragraph in section.footer.paragraphs:
+                replace_text_in_paragraph(paragraph, placeholder, replacement)
+
+
+def load_unitlist(allocation, path="data", filename="Antworten Buchungstool.xlsx", print_enabled=False):
+    full_labels = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=1).columns.tolist()
+    df = pd.read_excel(os.path.join(path, filename), sheet_name="Formularantworten 1", header=2)
+    non_empty_count = df.iloc[:, 0].count() +1
+    df = df.head(non_empty_count)
+
+    df.dropna(subset=["ID_all_int"], inplace=True)
+
+    for ic, col in enumerate(df.columns):
+        new = col
+        display_full_label = full_labels[ic].replace("\n", " ")
+        if len(display_full_label) > 80:
+            display_full_label = display_full_label[:77] + "..."
+        if col.startswith("Unnamed") and full_labels[ic].startswith("Unnamed"):
+            if print_enabled: print(f"\033[31m{new:>20}\033[0m: {display_full_label} (will get removed)")
+        elif col.startswith("Unnamed") and not full_labels[ic].startswith("Unnamed"):
+            try:
+                ID = full_labels[ic].split("[")[2].split("]")[0]  
+                group = full_labels[ic].split(" - ")[1].split(" ")[0][:2].lower()
+                if group == "wö":
+                    group = "wo"
+                new = f"{ID}_{group}_m3"
+                df.rename(columns={col: new}, inplace=True)
+                if print_enabled: print(f"\033[32m{new:>20}\033[0m: {display_full_label}")
+            except:
+                if print_enabled: print(f"\033[31m{new:>20}\033[0m: '{display_full_label}' will get removed for no parsing")
+                new = full_labels[ic]
+        elif not col.startswith("Unnamed") and not full_labels[ic].startswith("Unnamed"):
+            if print_enabled: print(f"\033[32m{new:>20}\033[0m: {display_full_label}")
+        else:
+            print(f"\033[31mERROR Label with no fullname \033[0m: '{display_full_label}' will get removed")
+            # new = full_labels[ic]
+
+    
+    for col in df.columns:
+        if col.startswith("Unnamed"):
+            df.drop(columns=[col], inplace=True)
+
+    if print_enabled:
+        print("\033[32mFinal columns:\033[0m")
+        for col in df.columns:
+            print(f"{col:>20}") 
+
+    group_df = []
+    for group in ["Pios", "Pfadis", "Wölfe"]:
+        df_group = df[df["group_all_tx"] == group].reset_index(drop=True)
+        df_group = df_group[[c for c in df.columns if f"_{group[:2].lower().replace('ö', 'o')}_" in c or "_all" in c]]
+
+        for ic, col in enumerate(df_group.columns):
+            # print(f"{'_'.join(col.split('_')[:-2]):>20}") 
+            if col.endswith("_m3") or col.endswith("_02") or col.endswith("_03")  or col.endswith("_05") or col.endswith("_int"):
+                df_group.fillna({col:-1}, inplace=True)
+                df_group = df_group.astype({col:"int32"})
+            if col.endswith("_tx"):
+                df_group = df_group.astype({col:"string"})
+            if col.endswith("_jn"):
+                df_group[col] = df_group[col].map({"Ja": True, "Nein": False})
+                df_group = df_group.astype({col:"bool"})
+            df_group.rename(columns={col: '_'.join(col.split('_')[:-2])}, inplace=True)
+        group_df.append(df_group)
+        
+        
+        df_group["OFF-26"] = df_group["AUX-HB"]
+        df_group["OFF-27"] = df_group["AUX-HB"]
+        df_group["OFF-28"] = df_group["AUX-FR"]
+        df_group["OFF-29"] = df_group["AUX-FR"]
+        df_group.drop(columns=["AUX-HB", "AUX-FR"], inplace=True)
+
+    df_pi, df_pf, df_wo = group_df
+
+    unclassified = [c for c in df.columns if ("_pi_" not in c) and ("_pf_" not in c) and ("_wo_" not in c) and ("_all_" not in c) and ("ID" not in c)]
+    if print_enabled:
+        if len(unclassified) >0:
+            print("\033[31mUnclassified columns (not assigned to any group):\033[0m")
+            for col in unclassified:
+                print(f"{col:>20}")
+        else:
+            print("\033[32mAll columns classified into groups.\033[0m")
+
+
+    if print_enabled:
+        for df_, name in zip([df_pi, df_pf, df_wo], ["Pios", "Pfadis", "Wölfe"]):
+            print(f"\033[32m{name} Final columns:\033[0m")
+            for col in df_.columns:
+                print(f"{col:>20}: {df_.dtypes[col]}")
+       
+    tn_numbers = pd.read_excel(os.path.join(path, "EH_Übersicht_Einheiten.xlsx"), sheet_name="Übersicht_Einheiten", header=1)
+    non_empty_count = tn_numbers.iloc[:, 0].count() +1
+    tn_numbers = tn_numbers.head(non_empty_count)
+    tn_numbers = tn_numbers[["ID", "Beteiligte Abteilungen", "Teilnehmende", "Betreuungsperson", "Datum", "Leitende"]]
+    tn_numbers["ID"] = tn_numbers["ID"].astype("Int64").astype("string")
+    tn_numbers = tn_numbers.set_index("ID")
+
+    for df_ in [df_pi, df_pf, df_wo]:
+        for i in range(df_.shape[0]):
+            ID = str(int(df_.loc[i, "ID"]))
+            data = {col: df_.loc[i, col] for col in df_.columns[1:]}
+            data["group"] = data["group"][:2]
+            if tn_numbers.index.str.contains(ID).sum() == 0:
+                print(f"\033[33mWARNING: could not find unit {ID} in TN\033[0m")
+                data["n_people"] = -1
+                data["fullname"] = "UNKNOWN"
+            else:  
+                data["n_people"] = tn_numbers.loc[ID, "Teilnehmende"]
+                data["n_leaders"] = tn_numbers.loc[ID, "Leitende"]
+                data["fullname"] = tn_numbers.loc[ID, "Beteiligte Abteilungen"]
+            if tn_numbers.loc[ID, "Datum"] == "12.-25. Juli 2026":
+                data["present_on"] = [e-12 for e in range(12, 25+1)] # -12 to convert to wählbär day (12.7. is Day 0)
+            if tn_numbers.loc[ID, "Datum"] == "13.-18. Juli 2026":
+                data["present_on"] = [e-12 for e in range(14, 17+1)] # 14 for no program on day 13
+            if tn_numbers.loc[ID, "Datum"] == "20.-25. Juli 2026":
+                data["present_on"] = [e-12 for e in range(21, 25+1)]
+
+            allocation.append_unit(
+                Unit(
+                    ID,
+                    data       
+            )
+        )
+
+    for row in tn_numbers.itertuples():
+        ID = row.Index
+        if all([ID != unit.ID for unit in allocation.UNITS]):
+            print(f"\033[33mWARNING: Unit {ID} is not in booking tool responses ({row.Betreuungsperson}).\033[0m")
+    input("Press Enter to continue...")
+    print(f"Loaded {len(allocation.UNITS)} units.")
+    
+    
+def load_blocklist(allocation, path="data", filename="PRG_Blockliste.xlsx"):
+
+    # TODO: load unit list
+    df = pd.read_excel(os.path.join(path, filename), sheet_name="On-Site Buchbar")
+    non_empty_count = df.iloc[:, 0].count() +1
+    df = df.head(non_empty_count)
+    df = df[[
+        'Block Nr.',
+        'Status',
+        'Kategorie', 
+        'Titel',
+        'Programmstruktur', 
+        'Dauer', 
+        'Blockart J+S', 
+        'Stufe', 
+        'Gruppengrösse',
+        "Hard limit", 
+        'Partizipation',
+        'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
+        'geschätzte Anzahl Durchführungen',
+        'Durchführingszeiten (Start)',
+
+        'Verteilungsprio'
+    ]]
+
+    df.columns = [
+        'ID',
+        'state',
+        'cat', 
+        'fullname',
+        'betr_unbetr', 
+        'dauer', 
+        'blockart_J_S', 
+        'stufen', 
+        'gruppengroesse',
+        "hard_limit", 
+        'mix_units',
+        'max_durchfuhrungen',
+        'est_durchfuhrungen',
+        'start_times',
+
+        'verteilungsprio'
+    ]
+
+    df_offsite = pd.read_excel(os.path.join(path, filename), sheet_name="Off Site & Wasser")
+    non_empty_count = df_offsite.iloc[:, 0].count() + 1
+    df_offsite = df_offsite.head(non_empty_count)
+    df_offsite = df_offsite[[
+        'Block Nr.',
+        'Status',
+        'Kategorie', 
+        'Titel',
+        'Programmstruktur', 
+        'Dauer', 
+        'Blockart J+S', 
+        'Stufe', 
+        'Gruppengrösse', 
+        "Hard limit",
+        'Partizipation',
+        'max. Anzahl Durchführungen (wie viele Einheiten können diesen Block besuchen?)',
+        'geschätzte Anzahl Durchführungen',
+        'Durchführingszeiten (Start)',
+
+        "Verteilungsprio"
+
+    ]]
+
+    df_offsite.columns = [
+        'ID',
+        'state',
+        'cat', 
+        'fullname',
+        'betr_unbetr', 
+        'dauer', 
+        'blockart_J_S', 
+        'stufen', 
+        'gruppengroesse',
+        "hard_limit", 
+        'mix_units',
+        'max_durchfuhrungen',
+        'est_durchfuhrungen',
+        'start_times',
+
+        'verteilungsprio'
+    ]
+
+    allocation.vp_bonus = {}
+    df = pd.concat([df, df_offsite], ignore_index=True)
+    df = df.dropna(subset=["ID"])
+    for bd in df.itertuples():
+        
+        length = 1
+        on_times = [0, 1, 2, 3, 4]
+        if bd.dauer == "4 h": 
+            length = 2
+            on_times = [1]
+        if bd.dauer == "6 h": 
+            length = 3
+            on_times = [0]
+        if bd.dauer == "8 h":
+            length = 3
+            on_times = [0]
+        if bd.dauer == "2 Tage":
+            length = 8
+            on_times = [0]
+        
+        slots = []
+        if not pd.isna(bd.start_times):
+            start_array = bd.start_times.split(", ")
+            day = [int(e[:2]) - 12 for e in start_array]
+            time = [ord(e[2]) - 65 for e in start_array]
+            for i in range(len(day)):
+                slots.append(Schedule.idx2str(day[i], time[i]))
+
+        group = [e[:2].lower().replace('ö', 'o') for e in bd.stufen.split(', ')]
+
+        cat = bd.cat.lower().replace("ä", "a")
+        if cat == "zweitageswanderung":
+            cat = "wanderung"
+
+        tags = set()
+        if "2 Einheiten" in bd.fullname:
+            tags.add("2units")
+        mix_units = False
+        if not pd.isna(bd.mix_units):
+            if "2/3 Einheiten zusammen" in bd.mix_units or "ganzes KALA" in bd.mix_units:
+                mix_units = True
+        if bd.verteilungsprio and pd.notna(bd.verteilungsprio):
+            allocation.vp_bonus[bd.ID] = (5 - int(str(bd.verteilungsprio)[0]))/5 # higher prio -> higher bonus, max bonus is 0.8 for prio 1
+    
+        allocation.append_block(
+            Block(
+                bd.ID,
+                {   
+                    "ID": bd.ID,
+                    "fullname": bd.fullname,
+                    "space": bd.gruppengroesse,
+                    "hard_limit": bd.hard_limit,
+                    "js_type": bd.blockart_J_S,
+                    "cat":  cat,
+                    "group": group,
+                    "length": length,
+                    "on_days": [1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12],
+                    "on_times": on_times,
+                    "on_slots": slots,
+                    "tags": tags,
+                    "state": bd.state,
+
+                    "verteilungsprio": bd.verteilungsprio,
+                    "mix_units": mix_units
+                }
+            )
+        )
+    
+    allocation.find_block_cats()
+    print(f"Loaded {len(allocation.BLOCKS)} blocks.")
+
+ 
+def plot_block(ax, slot, block):
+    day, slot = Schedule.to_idx(slot)
+    x = day
+    y = SLOTS_PER_DAY - slot 
+    ax.add_patch(patches.Rectangle((x, y), 1, -block.requirements["length"], linewidth=1, edgecolor='none', facecolor='teal'))
+    ax.text(x + 0.1, y-0.3, block.ID, fontweight="bold")
+    ax.text(x + 0.1, y-0.5, "ORT")
+
+
+def print_schedule(thing, save=False):
+    if type(thing) == Block or type(thing) == Unit:
+        schedule = thing.schedule
+    elif type(thing) == Schedule:
+        schedule = thing
+    else:
+        print("ERROR: unknown schedule type. expected 'Block', 'Unit' or 'Schedule'")
+
+    fig = plt.figure(figsize=(16, 5))
+    ax = plt.subplot(111)
+    for idd, day in enumerate(schedule.calendar):
+        for iss, slot in enumerate(day):
+            if len(slot) == 1:
+                block = slot[0]
+                plot_block(ax, (idd, iss), block)
+            if len(slot) > 1:
+                print("ERROR: MORE THAN ONE BLOCK PER SLOT")
+    ax.set_xlim(-1, 15)
+    ax.set_ylim(-1, 5)
+
+    ax.set_xticks([i + 0.5 for i in range(14)])
+    # TODO: Labels for days
+    
+    if save:
+        plt.savefig(save)
+    else:
+        plt.show()
+
+def print_block_geilheit(a):
+    counter = {}
+    for block in a.BLOCKS:
+        if "AUX" not in block.ID:
+            counter[block.ID] = 0
+
+    for unit in a.UNITS:
+        for ID, value in unit.prios.items():
+            if len(ID.split("-")) == 2 and "AUX" not in ID:
+                counter[ID] += value
+    
+    group_conter = {"pf": 0, "wo": 0, "pi": 0, "ro": 0}
+    for unit in a.UNITS:
+        group_conter[unit.group] +=1
+    
+    for block in a.BLOCKS:
+        if not "AUX" in block.ID:
+            allowed_units = sum([group_conter[gr] for gr in block.data["group"]])
+            counter[block.ID] /= allowed_units    
+
+    x = range(len(counter.keys()))
+    y = counter.values()
+    labels = counter.keys()
+    plt.figure(figsize=(16, 5))
+    plt.bar(x, y, color="#00b48f")
+    plt.xticks(x, labels, rotation="vertical")
+    plt.ylabel("Durchschnitt Prio Punkte aller Einheiten")
+    plt.tight_layout()
+    plt.show()
+       
+
+def slot_to_xlsx_cell(slot):
+    day, time = ord(slot[0]) - 65, int(slot[1])
+    return f"{chr(day+1+65) + str(time+1 +2)}"
+
+
+def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
+    workbook = xls.Workbook(os.path.join(path,fname))
+
+    merge_format = workbook.add_format(
+        {
+            "bold": 1,
+            "border": 0,
+            "align": "center",
+            "valign": "vcenter",
+            # "fg_color": "yellow",
+        }
+    )
+
+    group_colors = {
+        "wo": "#0db3bb",
+        "pf": "#9c8566",
+        "pi": "#c51f1f"
+    }
+    green_format = workbook.add_format({"font_color": "#00b48f"})
+    red_format = workbook.add_format({"font_color": "#f88589"})
+    blue_format = workbook.add_format({"font_color": "#608ee4"})
+    allocation.UNITS = sorted(allocation.UNITS, key=lambda e: e.ID) 
+    for iu, unit in enumerate(allocation.UNITS):
+        # unit = allocation.UNITS[0]
+        # print(f"Writing unit {unit.ID} to xlsx...")
+        worksheet = workbook.add_worksheet(unit.ID)
+        worksheet.set_tab_color(group_colors[unit.group])
+    
+        worksheet.merge_range("B1:O1", f"{unit.ID}: {unit.fullname} ({unit.group})", merge_format)
+        for i in range(1, SLOTS_PER_DAY +1):
+            worksheet.write(f"A{i+2}", f"slot {i}")
+        for i in range(DAYS):
+            worksheet.write(f"{chr(i+1+65)}2", f"{i+12}.07.")
+
+        for blocks in unit.schedule.get_time_list():
+            worksheet.write(slot_to_xlsx_cell(blocks["slot"]), "/".join(blocks["elements"]))
+
+        row = 10; col = 0
+
+        worksheet.write(f"{chr(col+65)}{row}", "info"); row+=1; col+=1
+        worksheet.write(f"{chr(col+65)}{row}", f"n_people: {unit.n_people}"); col+=1
+        
+        row +=1; col = 0
+        worksheet.write(f"{chr(col+65)}{row}", "general"); row+=1; col+=1
+        for key, value in unit.general.items():
+            if col > 8:
+                col = 1
+                row +=1
+            worksheet.write(f"{chr(col+65)}{row}", f"{key}:"); col+=1
+            worksheet.write(f"{chr(col+65)}{row}", f"{value}"); col+=1
+        
+        row+=1; col = 0
+        for cat, prios in unit.prios_sorted.items():
+            worksheet.write(f"A{row}", cat)
+            row +=1
+            col = 1
+            for prio in prios:
+                if col > 4:
+                    col = 1
+                    row +=1
+                if prio['value'] >= 2 and unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", green_format)
+                elif prio['value'] >=2 and not unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", red_format)
+                elif prio['value'] <2 and unit.has_block(prio['ID']):
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}", blue_format)
+                else:
+                    worksheet.write(f"{chr(col+65)}{row}", f"{prio['ID']}: {prio['value']}")
+                col +=1
+            row+= 1
+    # worksheet = workbook.add_worksheet("Freie Blöcke")
+    # worksheet.merge_range("B1:O1", "Freie Blöcke", merge_format)
+    # for i in range(1, SLOTS_PER_DAY +1):
+    #     worksheet.write(f"A{i+2}", f"slot {i}")
+    # for i in range(DAYS):
+    #     worksheet.write(f"{chr(i+1+65)}2", f"day {i+1}")
+
+    # for idd in range(DAYS):
+    #     for itt in range(SLOTS_PER_DAY):
+    #         cell = chr(idd + 1+65) + str(itt +3)
+    #         string = "=CONCATENATE(CONCATENATE("
+    #         for ib, block in enumerate(allocation.BLOCKS):
+    #             string += f'IF(${block.ID}.{cell} ="";CONCATENATE(${block.ID}.B1; CHAR(10));"");'
+    #             if ib == 63:
+    #                 string = string[:-1] + "); CONCATENATE("
+            
+    #         string = string[:-1]+"))"
+    #         worksheet.write(cell, string)   
+    cat_colors = {
+        "flussbaden": "#98b3e4",
+        "wasser": "#608ee4",
+        "si-mo": "#2052b0",
+        "sportaktivitat": "#c6464a",
+        "programmflache": "#f88589",
+        "ausflug": "#f2c966",
+        "workshop": "#e87928",
+        "wanderung": "#00b48f",
+        "nacht": "#094F41", 
+        "wald": "#49ebca",
+        "dusche": "#673B80",
+        "amtli": "#673B80",
+        "AUX": "#808080",
+        "anlass": "#673B80"
+    }
+    
+    for ib, block in enumerate(allocation.BLOCKS):
+        if isinstance(block, MetaBlock):
+            continue
+        # unit = allocation.UNITS[0]
+
+        worksheet = workbook.add_worksheet(block.ID)
+        if block.is_active:
+            worksheet.set_tab_color(cat_colors[block.data["cat"]])
+        else:
+            worksheet.set_tab_color("#808080")
+        worksheet.merge_range("B1:O1", f"{block.ID}: {block.data['fullname']} ({block.data['cat']})", merge_format)
+        for i in range(1, SLOTS_PER_DAY +1):
+            worksheet.write(f"A{i+2}", f"slot {i}")
+        for i in range(DAYS):
+            worksheet.write(f"{chr(i+1+65)}2", f"{i+12}.07.")
+        
+
+        for units in block.schedule.get_time_list():
+            worksheet.write(slot_to_xlsx_cell(units["slot"]), "/".join(units["elements"]))
+
+        col = 0; row = 10
+        worksheet.write(f"{chr(col+65)}{row}", "info"); row+=1; col+=1
+        for key, value in block.data.items():
+            worksheet.write(f"{chr(col+65)}{row}", f"{key}:" )
+            worksheet.write(f"{chr(col+65+1)}{row}", f"{value}")
+            row+=1
+
+    workbook.close()
+
+
+def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
+    workbook = pd.ExcelFile(os.path.join(path, filename))
+
+    unit_names = [sheet_name for sheet_name in workbook.sheet_names if not len(sheet_name.split("-")) == 2]
+    block_names = [sheet_name for sheet_name in workbook.sheet_names if len(sheet_name.split("-")) == 2]
+
+    for unit_n in unit_names:
+        
+        if unit_n == "419":
+            a.append_unit(Unit("419", {"fullname": "Pfadi Peter & Paul", "n_people": 2, "n_leaders": 0, "group":"pt", "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+            continue
+        
+        if not a.get_unit_by_ID(unit_n):
+            print(f"{FORMAT.RED}WARNING: Unit {unit_n} in xlsx not found in allocation.{FORMAT.RESET}")
+            if input("create? [y/n]: ").lower() == "y":
+                group = ["wo", "pf", "pi", "pt"][int(unit_n[0]) -1]
+                a.append_unit(Unit(unit_n, {"fullname": "X", "n_people": -1, "n_leaders": -1, "group":group, "contact": "X", "email": "X", "wasser_anerk": "X", "more_or_less": 5, "present_on": list(range(14)), "prios": []}))
+    
+    for block_n in block_names:
+        if not a.get_block_by_ID(block_n):
+            print(f"{FORMAT.RED}WARNING: Block {block_n} in xlsx not found in allocation.{FORMAT.RESET}")
+            if input("create? [y/n]: ").lower() == "y":
+                a.append_block(Block(block_n, {"fullname": "X", "cat": "X", "js_type": "none", "space": -1, "length": 1, "group": ["wo", "pf", "pi", "X"], "state": True, "tags": set(), "verteilungsprio": 6, "mix_units":False}))
+
+    for unit_n in unit_names:
+      
+        
+        print(f"\rReading unit sheet {unit_n}...", end="", flush=True)
+
+        df = get_df_from_sheet_name(workbook, unit_n)   
+
+        unit = a.get_unit_by_ID(unit_n)
+        for item in get_list_from(df):
+            block = a.get_block_by_ID(item["element"])
+            unit.schedule.set_entry(block, item["slot"]) # set all blocks to units
+        # print(f"Read {len(unit.schedule.get_list())} items for unit {unit_n}")
+
+    for block_n in block_names:
+
+        print(f"\rReading and testing block {block_n}...", end="", flush=True)
+        df = get_df_from_sheet_name(workbook, block_n)
+
+        block = a.get_block_by_ID(block_n)
+        for item in get_list_from(df):
+            unit = a.get_unit_by_ID(item["element"])
+            block.schedule.set_entry(unit, item["slot"]) # set all units to blocks
+            
+            if block not in unit.schedule[item["slot"]]: # test if block is actually in unit schedule for this slot, otherwise print warning and add it
+                print(f"\n{FORMAT.RED}WARNUNG: Einheit {unit.ID} hat nicht Block {block.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}", end="\n")
+                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                    unit.schedule.set_entry(block, item["slot"])
+    print("")
+    for unit_n in unit_names:
+        print(f"\rTesting if unit {unit_n:>4} has correct schedule...", end="", flush=True) 
+        df = get_df_from_sheet_name(workbook, unit_n)
+
+        unit = a.get_unit_by_ID(unit_n)
+        for item in get_list_from(df):
+            block = a.get_block_by_ID(item["element"])
+            if unit not in block.schedule[item["slot"]]:
+                print(f"\n{FORMAT.RED}WARNUNG: Block {block.ID} hat nicht Einheit {unit.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}", end="\n")
+                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                    unit.schedule.set_entry(block, item["slot"])
+    print("")
+
+def export_TN_overwiew_to_xlsx(allocation, fname="TN_Overview.xlsx", path="exports"):
+    workbook = xls.Workbook(os.path.join(path,fname))
+    worksheet = workbook.add_worksheet("TN Overview")
+    merge_format = workbook.add_format(
+        {
+            "bold": 1,
+            "border": 0,
+            "align": "center",
+            "valign": "vcenter",
+            # "fg_color": "yellow",
+        }
+    )
+    worksheet.merge_range("A1:E1", f"Teilnehmerübersicht", merge_format)
+    worksheet.write("A3", "ID")
+    worksheet.write("B3", "Name")
+    
+    for i in range(1, DAYS):
+        start = i*SLOTS_PER_DAY + -2
+        stop = (i+1)*SLOTS_PER_DAY -1 + -2
+        worksheet.merge_range(f"{column_number_to_letter(start)}2:{column_number_to_letter(stop)}2", f"{i+12}.07.")
+        
+        for j in range(SLOTS_PER_DAY):
+            worksheet.write(f"{column_number_to_letter(start + j)}3", ["VM", "NM1", "NM2", "AB", "NA"][j])
+
+            # set column with to 0.8
+            worksheet.set_column(f"{column_number_to_letter(start + j)}:{column_number_to_letter(start + j)}", 3)
+
+    worksheet.write("BP3", "TOTAL")
+    row = 4
+    block_stats = {}
+
+    color_pf = workbook.add_format({"bg_color": "#9c8566"})
+    color_wo = workbook.add_format({"bg_color": "#0db3bb"})
+    color_pi = workbook.add_format({"bg_color": "#c51f1f"})   
+    
+    for block in allocation.BLOCKS:
+        if isinstance(block, MetaBlock):
+            continue
+        
+        if not block.is_active: # only export active blocks
+            continue
+        
+        worksheet.write(f"A{row}", block.ID)
+        worksheet.write(f"B{row}", block.data["fullname"])
+        worksheet.write(f"B{row+1}", "TN")
+        worksheet.write(f"B{row+2}", "Leitende")
+        worksheet.write(f"B{row+3}", "Gesamt")
+        block_stats[block.ID] = {"tn": 0, "leaders": 0, "runs": 0, "total": 0}
+        
+        for day in range(1, DAYS):
+            for time in range(SLOTS_PER_DAY):
+                slot = Schedule.idx2str(day, time)
+                if block.schedule[slot] == []:
+                    continue
+                
+                col = column_number_to_letter(day*SLOTS_PER_DAY + time -2)
+                if block.schedule[slot][0].group == "pf":
+                    fmt = color_pf
+                elif block.schedule[slot][0].group == "wo":
+                    fmt = color_wo
+                elif block.schedule[slot][0].group == "pi":
+                    fmt = color_pi
+                else:
+                    fmt = None
+                worksheet.write(f"{col}{row}", ", ".join([unit.ID for unit in block.schedule[slot]]), fmt) 
+            
+                tn = sum([unit.n_people for unit in block.schedule[slot]])
+                leaders = sum([unit.n_leaders for unit in block.schedule[slot]])
+                worksheet.write(f"{col}{row+1}", tn)
+                worksheet.write(f"{col}{row+2}", leaders)
+                worksheet.write(f"{col}{row+3}", tn + leaders)
+                
+                block_stats[block.ID]["tn"] += tn
+                block_stats[block.ID]["leaders"] += leaders
+                block_stats[block.ID]["total"] += tn + leaders
+                block_stats[block.ID]["runs"] +=1
+
+
+        
+        worksheet.write(f"BP{row}", block_stats[block.ID]["runs"])
+        worksheet.write(f"BP{row+1}", block_stats[block.ID]["tn"])
+        worksheet.write(f"BP{row+2}", block_stats[block.ID]["leaders"])
+        worksheet.write(f"BP{row+3}", block_stats[block.ID]["total"])
+        row += 4
+
+    workbook.close()
+
+def column_number_to_letter(col):
+    """
+    Convert a column number (1-indexed) to Excel column letters.
+    Examples: 1 -> 'A', 26 -> 'Z', 27 -> 'AA', 702 -> 'ZZ', 703 -> 'AAA'
+    """
+    result = ""
+    while col > 0:
+        col -= 1  # Adjust for 1-indexing
+        result = chr(col % 26 + ord('A')) + result
+        col //= 26
+    return result
+
+def get_df_from_sheet_name(wb, sn):
+    df = pd.read_excel(wb, sheet_name=sn, header=1)
+    df.columns = ["slot", *range(0, 14)]
+    df.drop(["slot"], axis=1, inplace=True)
+    return df
+
+def get_list_from(df):
+    result = []
+    for day in range(DAYS):
+            for time in range(SLOTS_PER_DAY):
+                # cell = chr(day + 1+65) + str(time +3)
+                value = df.loc[time, day]
+                if pd.isna(value):
+                    continue
+                if type(value) == np.float64:
+                    value = str(int(value))
+                # print(value, type(value))
+                for e in value.split("/"): # allow multiple blocks per slot
+                    if e.strip():
+                        result.append({
+                            "slot": Schedule.idx2str(day, time),
+                            "element": e.strip()
+                        })
+    return result
+
+def slot_to_date(slot):
+    day, time = Schedule.to_idx(slot)
+    time_map = {0: "Vormittag", 1: "Nachmittag 1", 2: "Nachmittag 2", 3: "Abend", 4: "Nacht"}
+    return f"{day+12}.07. {time_map[time]}"
