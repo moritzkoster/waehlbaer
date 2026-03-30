@@ -3,7 +3,13 @@ from typing import Dict, Optional
 
 from nicegui import ui
 
-from IO import load_blocklist, load_unitlist, read_from_xlsx
+from IO import (
+    export_block_to_pdf,
+    export_to_pdf,
+    load_blocklist,
+    load_unitlist,
+    read_from_xlsx,
+)
 from main import (
     add_amtli_series,
     add_bogenscheissen_series,
@@ -57,9 +63,9 @@ block_category_colors = {
 class LeftDockApp:
     """
     App with left dock and three views:
-    - Einheiten: top shows schedule for selected unit, bottom shows unit buttons
+    - Einheiten: top shows schedule for selected unit, an Export PDF button, bottom shows unit buttons
     - Blöcke: top shows schedule for selected block (which units visit which slots),
-              bottom shows block buttons
+              bottom shows block buttons (only for active blocks) and an Export PDF button
     - Auflistung: top shows list of units for currently selected slot,
                   bottom shows a slot-picker table (each cell selects a slot)
     """
@@ -79,6 +85,7 @@ class LeftDockApp:
         # base CSS class names that we assigned to buttons (so we can reset)
         self.unit_button_base_classes: Dict[str, str] = {}
         self.block_button_base_classes: Dict[str, str] = {}
+        self.slot_button_base_classes: Dict[str, str] = {}
 
         # currently selected slot for Auflistung view (default first day, first slot)
         self.selected_slot: str = "A0"
@@ -127,6 +134,13 @@ class LeftDockApp:
                         "width: 100%; height: 45vh; overflow: auto; border: 1px solid #ddd;"
                     )
 
+                    # Export PDF button below the schedule (operates on current unit)
+                    with ui.row().style("gap: 8px;"):
+                        ui.button(
+                            "Export PDF",
+                            on_click=lambda e=None: self.export_current_unit_pdf(),
+                        ).props("unelevated").style("min-width:140px;")
+
                     # unit buttons
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
                         ui.label("Einheiten:")
@@ -174,15 +188,27 @@ class LeftDockApp:
                         "width: 100%; height: 45vh; overflow: auto; border: 1px solid #ddd;"
                     )
 
-                    # block buttons
+                    # Export PDF button for current block (below the block schedule)
+                    with ui.row().style("gap: 8px;"):
+                        ui.button(
+                            "Export PDF",
+                            on_click=lambda e=None: self.export_current_block_pdf(),
+                        ).props("unelevated").style("min-width:140px;")
+
+                    # block buttons (only for active blocks)
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
                         ui.label("Blöcke:")
                         with ui.row().style("flex-wrap: wrap; gap: 8px;"):
                             if self.allocation is not None:
                                 for block in getattr(self.allocation, "BLOCKS", []):
-                                    # only create buttons for active blocks
-                                    if not getattr(block, "is_active", True):
-                                        continue
+                                    # only create buttons for active blocks; if attribute missing assume active
+                                    try:
+                                        if hasattr(block, "is_active") and not getattr(
+                                            block, "is_active", True
+                                        ):
+                                            continue
+                                    except Exception:
+                                        pass
                                     group = ""
                                     try:
                                         group = block.data.get("group", "") or ""
@@ -224,30 +250,27 @@ class LeftDockApp:
                     with ui.card().style(
                         "padding: 12px; height: 45vh; overflow: auto;"
                     ):
-                        ui.label("Einheiten in gewähltem Slot:").style(
-                            "font-size: 16px; font-weight: 600; margin-bottom: 12px;"
-                        )
-                        # initial empty table
+                        ui.label("Einheiten in gewähltem Slot:")
+                        # initial table for default selected slot
                         initial_list_html = self._build_unit_list_html(
                             self.selected_slot
                         )
                         ui.html(
-                            f'<div id="slot-list" style="width:100%;">{initial_list_html}</div>'
+                            f'<div id="slot-list" style="width:100%">{initial_list_html}</div>'
                         )
 
-                    # Bottom: slot picker grid (same layout as schedule table but cells select slot)
+                    # Bottom: slot picker grid
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
                         ui.label("Slot wählen:")
-                        # build slot-picker header row (days)
+                        # header of days
                         with ui.row().style("gap: 0; align-items: stretch;"):
-                            # left corner empty to align with slot names
                             ui.label("").style("width:120px; min-width:120px;")
                             for _day in DAYS:
                                 ui.label(_day).style(
                                     "flex: 1; min-width:100px; max-width:100px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; padding:6px; border:1px solid #eee; background:#fafafa;"
                                 )
 
-                        # build rows for each slot with a button per day-slot
+                        # rows for slots with a button per day-slot
                         if self.allocation is not None:
                             for slot_index, slot_label in enumerate(SLOTS):
                                 with ui.row().style("gap: 0; align-items: stretch;"):
@@ -257,8 +280,6 @@ class LeftDockApp:
                                     for col_index, _day in enumerate(DAYS):
                                         slot_id = f"{chr(65 + col_index)}{slot_index}"  # A0..N4
                                         btn_id = f"slot-btn-{slot_id}"
-                                        # small visual button for selecting the slot
-                                        # store in self.slot_buttons for later toggling classes
                                         btn = (
                                             ui.button("")
                                             .props(f"id:{btn_id}")
@@ -268,12 +289,10 @@ class LeftDockApp:
                                             )
                                         )
 
-                                        # attach handler
                                         def make_slot_handler(sid):
                                             return lambda e=None: self.select_slot(sid)
 
                                         btn.on("click", make_slot_handler(slot_id))
-                                        # store button object
                                         try:
                                             self.slot_buttons[slot_id] = btn
                                         except Exception:
@@ -345,12 +364,18 @@ class LeftDockApp:
         for k, view in self._views.items():
             if k == name:
                 if hasattr(view, "show"):
-                    view.show()
+                    try:
+                        view.show()
+                    except Exception:
+                        view.style("display: block !important;")
                 else:
                     view.style("display: block !important;")
             else:
                 if hasattr(view, "hide"):
-                    view.hide()
+                    try:
+                        view.hide()
+                    except Exception:
+                        view.style("display: none !important;")
                 else:
                     view.style("display: none !important;")
 
@@ -445,14 +470,37 @@ class LeftDockApp:
             block_id_text = "Frei"
             fullname = ""
             ort = ""
-            # attempt to find the element occupying that slot for this unit
+            # attempt to find the element occupying that slot for this unit (including multi-slot elements)
             try:
                 occupied = unit.schedule.get_list(with_slot=True)
                 found = None
                 for entry in occupied:
-                    if entry.get("slot") == slot_id:
-                        found = entry.get("element")
+                    start_slot = entry.get("slot")
+                    elem = entry.get("element")
+                    if not start_slot or elem is None:
+                        continue
+                    # compute length (if element provides data.length)
+                    length = 1
+                    try:
+                        if hasattr(elem, "data") and isinstance(elem.data, dict):
+                            length = int(elem.data.get("length", 1))
+                    except Exception:
+                        length = 1
+
+                    # slots covered by this element: start_slot + next (length-1)
+                    slots_covered = [start_slot]
+                    if length > 1:
+                        try:
+                            slots_covered.extend(
+                                self._next_slots(start_slot, length - 1)
+                            )
+                        except Exception:
+                            pass
+
+                    if slot_id in slots_covered:
+                        found = elem
                         break
+
                 if found is not None:
                     # if the element is an object with ID attribute (block)
                     try:
@@ -591,6 +639,25 @@ class LeftDockApp:
         except Exception:
             pass
 
+    def export_current_unit_pdf(self) -> None:
+        """
+        Export current unit to PDF using IO.export_to_pdf.
+        """
+        try:
+            if not self.current_unit:
+                ui.notify("Keine Einheit ausgewählt", color="warning")
+                return
+            # call export function imported from IO
+            try:
+                export_to_pdf(self.current_unit)
+                ui.notify(
+                    f"PDF exportiert für Einheit {getattr(self.current_unit, 'ID', '')}"
+                )
+            except Exception as e:
+                ui.notify(f"Export fehlgeschlagen: {e}", color="negative")
+        except Exception:
+            pass
+
     # --------------------
     # Block selection and rendering
     # --------------------
@@ -677,6 +744,24 @@ class LeftDockApp:
             ui.run_javascript(
                 f"document.getElementById('schedule-table-block').innerHTML = `{html}`;"
             )
+        except Exception:
+            pass
+
+    def export_current_block_pdf(self) -> None:
+        """
+        Export the currently selected block to PDF using IO.export_block_to_pdf.
+        """
+        try:
+            if not self.current_block:
+                ui.notify("Kein Block ausgewählt", color="warning")
+                return
+            try:
+                export_block_to_pdf(self.current_block)
+                ui.notify(
+                    f"PDF exportiert für Block {getattr(self.current_block, 'ID', '')}"
+                )
+            except Exception as e:
+                ui.notify(f"Export fehlgeschlagen: {e}", color="negative")
         except Exception:
             pass
 
