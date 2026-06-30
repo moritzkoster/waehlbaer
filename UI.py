@@ -70,6 +70,9 @@ class LeftDockApp:
                   bottom shows a slot-picker table (each cell selects a slot)
 
     Additional features:
+    - Per-cell edit button in Einheiten view opens a block picker dialog with checkboxes
+    - Change log records every allocation change in human-readable German
+    - Save dialog shows the full change log and requires confirmation before writing
     - Edit dialogs for unit and block schedules (text-based)
     - Staging of changes in `pending_changes` (not applied immediately)
     - Review dialog summarizing pending changes and a Confirm button to apply them
@@ -96,10 +99,10 @@ class LeftDockApp:
         self.selected_slot: str = "A0"
 
         # Pending changes staged by the user
-        # Each change is a dict describing the mutation:
-        # - for unit edits: {'type': 'unit', 'unit_id': ..., 'slot': 'A0', 'old': 'B12', 'new': 'B34'}
-        # - for block edits: {'type': 'block', 'block_id': ..., 'slot': 'A0', 'old': ['U1','U2'], 'new': ['U1']}
         self.pending_changes: List[dict] = []
+
+        # Change log: human-readable German strings of every applied allocation change
+        self.change_log: List[str] = []
 
         # Build layout: sidebar + main area
         with ui.row().style("height: 100vh; gap: 0;"):
@@ -128,7 +131,7 @@ class LeftDockApp:
                     on_click=lambda e=None: self.open_save_dialog(),
                 ).props("unelevated").style(
                     "width: 100%; min-height: 44px; text-align: left; padding-left: 12px; background:#f3f4f6;"
-                )
+                ).props("color=orange")
                 ui.separator()
                 ui.label("Status: ready").classes("text-xs")
 
@@ -144,7 +147,7 @@ class LeftDockApp:
                     ui.html('<div id="einheiten-title"><h3>Einheiten</h3></div>')
 
                     # schedule container (for unit)
-                    initial_table = self._build_table_html({})
+                    initial_table = self._build_table_html({}, editable=False)
                     ui.html(
                         f'<div id="schedule-table" style="width:100%;">{initial_table}</div>'
                     ).style(
@@ -157,14 +160,14 @@ class LeftDockApp:
                             "Export PDF",
                             on_click=lambda e=None: self.export_current_unit_pdf(),
                         ).props("unelevated").style("min-width:140px;")
-                        ui.button(
-                            "Edit Schedule",
-                            on_click=lambda e=None: self.open_unit_edit_dialog(),
-                        ).props("unelevated").style("min-width:140px;")
-                        ui.button(
-                            "Review & Save",
-                            on_click=lambda e=None: self.open_review_dialog(),
-                        ).props("unelevated").style("min-width:140px;")
+                        # ui.button(
+                        #     "Edit Schedule",
+                        #     on_click=lambda e=None: self.open_unit_edit_dialog(),
+                        # ).props("unelevated").style("min-width:140px;")
+                        # ui.button(
+                        #     "Review & Save",
+                        #     on_click=lambda e=None: self.open_review_dialog(),
+                        # ).props("unelevated").style("min-width:140px;")
 
                     # unit buttons
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
@@ -172,32 +175,28 @@ class LeftDockApp:
                         with ui.row().style("flex-wrap: wrap; gap: 8px;"):
                             if self.allocation is not None:
                                 for unit in getattr(self.allocation, "UNITS", []):
+                                    print(f"creating button for unit: {unit.ID}")
                                     group = getattr(unit, "group", "") or ""
                                     base_class = (
                                         f"unit-btn group-{group}"
                                         if group
                                         else "unit-btn"
                                     )
-                                    # assign an id to help DOM selection; NiceGUI may wrap the actual label in internal nodes
                                     btn_id = f"unit-btn-{unit.ID}"
                                     btn = ui.button(str(unit.ID)).props(f"id:{btn_id}")
-                                    # record base class
                                     self.unit_button_base_classes[unit.ID] = base_class
 
-                                    # attach handler
                                     def make_u_handler(u, btn_ref):
                                         return lambda e=None: self.select_unit(
                                             u, btn_ref
                                         )
 
                                     btn.on("click", make_u_handler(unit, btn))
-                                    # store button object
                                     try:
                                         self.unit_buttons[unit.ID] = btn
                                     except Exception:
                                         pass
 
-                                    # Set DOM classes directly (in case .classes() is not supported on the button object)
                                     try:
                                         ui.run_javascript(
                                             f"var el = document.getElementById('{btn_id}'); if (el) el.className = '{base_class}';"
@@ -209,7 +208,6 @@ class LeftDockApp:
                 with ui.column().style("gap: 8px;") as self.view_blocke:
                     ui.html('<div id="blocke-title"><h3>Blöcke</h3></div>')
 
-                    # schedule container (for block)
                     initial_table_b = self._build_table_html({})
                     ui.html(
                         f'<div id="schedule-table-block" style="width:100%;">{initial_table_b}</div>'
@@ -217,28 +215,25 @@ class LeftDockApp:
                         "width: 100%; height: 45vh; overflow: auto; border: 1px solid #ddd;"
                     )
 
-                    # actions for block view
                     with ui.row().style("gap: 8px;"):
                         ui.button(
                             "Export PDF",
                             on_click=lambda e=None: self.export_current_block_pdf(),
                         ).props("unelevated").style("min-width:140px;")
-                        ui.button(
-                            "Edit Schedule",
-                            on_click=lambda e=None: self.open_block_edit_dialog(),
-                        ).props("unelevated").style("min-width:140px;")
-                        ui.button(
-                            "Review & Save",
-                            on_click=lambda e=None: self.open_review_dialog(),
-                        ).props("unelevated").style("min-width:140px;")
+                        # ui.button(
+                        #     "Edit Schedule",
+                        #     on_click=lambda e=None: self.open_block_edit_dialog(),
+                        # ).props("unelevated").style("min-width:140px;")
+                        # ui.button(
+                        #     "Review & Save",
+                        #     on_click=lambda e=None: self.open_review_dialog(),
+                        # ).props("unelevated").style("min-width:140px;")
 
-                    # block buttons (only for active blocks)
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
                         ui.label("Blöcke:")
                         with ui.row().style("flex-wrap: wrap; gap: 8px;"):
                             if self.allocation is not None:
                                 for block in getattr(self.allocation, "BLOCKS", []):
-                                    # only create buttons for active blocks; if attribute missing assume active
                                     try:
                                         if hasattr(block, "is_active") and not getattr(
                                             block, "is_active", True
@@ -273,7 +268,6 @@ class LeftDockApp:
                                     except Exception:
                                         pass
 
-                                    # Set DOM classes directly
                                     try:
                                         ui.run_javascript(
                                             f"var el = document.getElementById('{btn_id}'); if (el) el.className = '{base_class}';"
@@ -287,12 +281,10 @@ class LeftDockApp:
                         f'<div id="auflistung-title"><h3>Auflistung für Slot {DAYS[0]} {SLOTS[0]}</h3></div>'
                     )
 
-                    # Top: list of units for currently selected slot
                     with ui.card().style(
                         "padding: 12px; height: 45vh; overflow: auto;"
                     ):
                         ui.label("Einheiten in gewähltem Slot:")
-                        # initial table for default selected slot
                         initial_list_html = self._build_unit_list_html(
                             self.selected_slot
                         )
@@ -300,10 +292,8 @@ class LeftDockApp:
                             f'<div id="slot-list" style="width:100%">{initial_list_html}</div>'
                         )
 
-                    # Bottom: slot picker grid
                     with ui.card().style("padding: 8px; height: 40vh; overflow: auto;"):
                         ui.label("Slot wählen:")
-                        # header of days
                         with ui.row().style("gap: 0; align-items: stretch;"):
                             ui.label("").style("width:120px; min-width:120px;")
                             for _day in DAYS:
@@ -311,7 +301,6 @@ class LeftDockApp:
                                     "flex: 1; min-width:100px; max-width:100px; text-overflow:ellipsis; overflow:hidden; white-space:nowrap; padding:6px; border:1px solid #eee; background:#fafafa;"
                                 )
 
-                        # rows for slots with a button per day-slot
                         if self.allocation is not None:
                             for slot_index, slot_label in enumerate(SLOTS):
                                 with ui.row().style("gap: 0; align-items: stretch;"):
@@ -319,7 +308,7 @@ class LeftDockApp:
                                         "width:120px; min-width:120px; padding:6px; border:1px solid #eee; background:#fafafa; font-weight:600;"
                                     )
                                     for col_index, _day in enumerate(DAYS):
-                                        slot_id = f"{chr(65 + col_index)}{slot_index}"  # A0..N4
+                                        slot_id = f"{chr(65 + col_index)}{slot_index}"
                                         btn_id = f"slot-btn-{slot_id}"
                                         btn = (
                                             ui.button("")
@@ -338,7 +327,6 @@ class LeftDockApp:
                                         except Exception:
                                             pass
 
-                                        # Set DOM classes directly for slot buttons
                                         try:
                                             ui.run_javascript(
                                                 f"var el = document.getElementById('{btn_id}'); if (el) el.className = 'slot-btn';"
@@ -346,20 +334,16 @@ class LeftDockApp:
                                         except Exception:
                                             pass
 
-        # store views for show/hide
         self._views = {
             "einheiten": self.view_einheiten,
             "blocke": self.view_blocke,
             "auflistung": self.view_auflistung,
         }
 
-        # start with einheiten view visible
         self.show_view("einheiten")
 
-        # CSS - target wrapper and Quasar internals to ensure colors show
         ui.add_head_html(
             """<style>
-            /* base button styling and override Quasar internals where needed */
             .unit-btn, .unit-btn .q-btn, .unit-btn .q-btn__content, .unit-btn .q-btn__label {
                 color: white !important;
                 border-radius: 6px !important;
@@ -384,7 +368,6 @@ class LeftDockApp:
             .group-pt, .group-pt .q-btn { background: #e87928 !important; }
             .unit-btn { margin: 2px !important; line-height: 1 !important; }
 
-            /* slot picker buttons */
             .slot-btn, .slot-btn .q-btn, .slot-btn .q-btn__content, .slot-btn .q-btn__label {
                 background: #ffffff !important;
                 color: #000 !important;
@@ -392,17 +375,44 @@ class LeftDockApp:
                 border-radius: 4px !important;
             }
             .slot-btn.selected, .slot-btn.selected .q-btn {
-                background: #3b82f6 !important; /* blue */
+                background: #3b82f6 !important;
                 color: #fff !important;
                 border-color: #2563eb !important;
                 box-shadow: 0 6px 18px rgba(37,99,235,0.12) !important;
             }
+
+            /* Cell edit button inside schedule table */
+            .cell-edit-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 22px;
+                height: 22px;
+                border-radius: 4px;
+                border: 1px solid #bbb;
+                background: #fff;
+                cursor: pointer;
+                font-size: 12px;
+                line-height: 1;
+                padding: 0;
+                margin-left: 4px;
+                vertical-align: middle;
+                opacity: 0.7;
+                transition: opacity 0.12s, background 0.12s;
+                flex-shrink: 0;
+            }
+            .cell-edit-btn:hover {
+                opacity: 1;
+                background: #e8f0fe;
+                border-color: #3b82f6;
+            }
+            .cell-edit-btn:active {
+                background: #c7d9fa;
+            }
             </style>"""
         )
 
-        # After building UI elements, set the initial selected slot visual and list
         self._apply_selected_slot_visual()
-        # populate initial unit list
         self._update_slot_list_html()
 
     # --------------------
@@ -430,10 +440,13 @@ class LeftDockApp:
     # --------------------
     # HTML table builder (reused for schedules)
     # --------------------
-    def _build_table_html(self, occupied_map: dict) -> str:
+    def _build_table_html(self, occupied_map: dict, editable: bool = False) -> str:
         """
         Build and return HTML for the schedule table.
         occupied_map: dict mapping slot_id like 'A0' -> dict with keys 'text', optional 'bg', 'fg'
+        editable: if True, each cell gets a small pencil button that calls
+                  window._waehlbaer_editCell(slot_id) — which is bridged to Python via the
+                  NiceGUI element's onclick mechanism set up separately.
         """
         html_parts = []
         html_parts.append(
@@ -462,7 +475,10 @@ class LeftDockApp:
             for col_index, _day in enumerate(DAYS):
                 slot_id = f"{chr(65 + col_index)}{slot_index}"  # A0..N4
                 val = occupied_map.get(slot_id, "")
-                base_style = "border:1px solid #ccc; padding:6px; height:48px; vertical-align: middle; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; width:100px; max-width:100px;"
+                base_style = (
+                    "border:1px solid #ccc; padding:6px; height:48px; vertical-align: middle; "
+                    "overflow:hidden; width:100px; max-width:100px; position: relative;"
+                )
                 if val:
                     cell_text = val.get("text", "")
                     cell_bg = val.get("bg", "")
@@ -475,25 +491,278 @@ class LeftDockApp:
                 else:
                     cell_style = base_style
                     cell_text = ""
-                html_parts.append(f'<td style="{cell_style}">{cell_text}</td>')
+
+                if editable:
+                    # Edit button calls a global JS function bridged to Python
+                    edit_btn = (
+                        f'<button class="cell-edit-btn" '
+                        f"onclick=\"window._waehlbaer_editCell('{slot_id}')\" "
+                        f'title="Slot bearbeiten">✏️</button>'
+                    )
+                    cell_content = (
+                        f'<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; '
+                        f'flex:1; display:inline-block; vertical-align:middle;">{cell_text}</span>'
+                        f"{edit_btn}"
+                    )
+                    cell_inner_style = (
+                        "display:flex; align-items:center; justify-content:space-between; "
+                        "width:100%; height:100%;"
+                    )
+                    html_parts.append(
+                        f'<td style="{cell_style}">'
+                        f'<div style="{cell_inner_style}">{cell_content}</div>'
+                        f"</td>"
+                    )
+                else:
+                    html_parts.append(
+                        f'<td style="{cell_style}; text-overflow:ellipsis; white-space:nowrap;">'
+                        f"{cell_text}</td>"
+                    )
             html_parts.append("</tr>")
         html_parts.append("</tbody>")
         html_parts.append("</table>")
         return "\n".join(html_parts)
 
     # --------------------
+    # Cell edit dialog (block picker per slot)
+    # --------------------
+    def _register_cell_edit_bridge(self) -> None:
+        """
+        Inject a JS function window._waehlbaer_editCell(slotId) that sends a message
+        back to Python by appending a hidden form + submitting, or via NiceGUI's
+        run_javascript + element event trick.
+        We use ui.run_javascript to define the bridge each time the schedule is refreshed.
+        """
+        js = r"""
+        window._waehlbaer_editCell = function(slotId) {
+            console.log("JS function called for slotId:", slotId);
+            // Trigger a NiceGUI element click that carries the slot id.
+            // We set a global variable and click a hidden trigger element.
+            window._waehlbaer_pending_slot = slotId;
+            var trigger = document.getElementById('_waehlbaer_cell_edit_trigger');
+            if (trigger) {console.log("Triggering cell edit for slot:", slotId); trigger.click();}
+        };
+        """
+        try:
+            ui.run_javascript(js)
+        except Exception:
+            pass
+
+    def open_cell_edit_dialog(self, slot_id: str) -> None:
+        print(f"Opening cell edit dialog for slot: {slot_id}")
+        """
+        Open a dialog for the given slot_id that lets the user pick which block(s)
+        should be assigned to that slot for the currently selected unit.
+        Confirming immediately applies the change and logs it.
+        """
+        if not self.current_unit:
+            ui.notify("Keine Einheit ausgewählt", color="warning")
+            return
+        if not self.allocation:
+            return
+
+        unit = self.current_unit
+
+        # Resolve human-readable slot label for display and log
+        try:
+            day_index = ord(slot_id[0]) - 65
+            slot_index = int(slot_id[1:])
+            day_label = DAYS[day_index] if 0 <= day_index < len(DAYS) else slot_id
+            slot_label_str = (
+                SLOTS[slot_index] if 0 <= slot_index < len(SLOTS) else slot_id
+            )
+            slot_display = f"{day_label} {slot_label_str}"
+        except Exception:
+            slot_display = slot_id
+
+        # Find which block is currently in this slot for this unit
+        current_block_id = ""
+        try:
+            for entry in unit.schedule.get_list(with_slot=True):
+                if entry.get("slot") == slot_id:
+                    elem = entry.get("element")
+                    if elem is not None:
+                        current_block_id = str(getattr(elem, "ID", ""))
+                    break
+        except Exception:
+            pass
+
+        # Collect all active blocks
+        active_blocks = []
+        try:
+            for block in getattr(self.allocation, "BLOCKS", []):
+                try:
+                    if hasattr(block, "is_active") and not getattr(
+                        block, "is_active", True
+                    ):
+                        continue
+                except Exception:
+                    pass
+                active_blocks.append(block)
+        except Exception:
+            pass
+
+        # Build dialog
+        with ui.dialog() as dlg:
+            with ui.card().style("min-width: 480px; max-width: 640px; padding: 20px;"):
+                ui.markdown(
+                    f"### Block wählen\n"
+                    f"**Einheit:** {unit.ID} – {getattr(unit, 'fullname', '')}  \n"
+                    f"**Slot:** {slot_display}"
+                ).style("margin-bottom: 12px;")
+
+                if not active_blocks:
+                    ui.label("Keine aktiven Blöcke gefunden.")
+                else:
+                    ui.label("Wähle einen Block (oder keinen für «Frei»):").style(
+                        "font-weight: 600; margin-bottom: 8px;"
+                    )
+
+                    # Radio-style: one block per slot (or none)
+                    # We use checkboxes but enforce single selection via a dict
+                    # Actually: use a single radio group via ui.radio if available,
+                    # otherwise use a select dropdown for clarity.
+                    # Using a scrollable list of radio options:
+
+                    block_options = {"": "— Frei (kein Block) —"}
+                    for b in active_blocks:
+                        try:
+                            fullname = (
+                                b.data.get("fullname", "")
+                                if hasattr(b, "data") and isinstance(b.data, dict)
+                                else ""
+                            )
+                        except Exception:
+                            fullname = ""
+                        label = f"{b.ID}"
+                        if fullname:
+                            label += f"  –  {fullname}"
+                        block_options[str(b.ID)] = label
+
+                    selected_val = ui.radio(
+                        options=block_options,
+                        value=current_block_id
+                        if current_block_id in block_options
+                        else "",
+                    ).style("max-height: 340px; overflow-y: auto; display: block;")
+
+                ui.separator().style("margin: 12px 0;")
+
+                with ui.row().style("gap: 8px; justify-content: flex-end;"):
+
+                    def on_cancel(e=None):
+                        dlg.close()
+
+                    def on_confirm(e=None):
+                        dlg.close()
+                        new_bid = selected_val.value if active_blocks else ""
+                        self._apply_cell_edit(
+                            unit=unit,
+                            slot_id=slot_id,
+                            slot_display=slot_display,
+                            old_bid=current_block_id,
+                            new_bid=new_bid,
+                        )
+
+                    ui.button("Abbrechen", on_click=on_cancel).props("unelevated flat")
+                    ui.button("Bestätigen", on_click=on_confirm).props(
+                        "unelevated"
+                    ).style("background: #3b82f6; color: white;")
+
+        dlg.open()
+
+    def _apply_cell_edit(
+        self,
+        unit,
+        slot_id: str,
+        slot_display: str,
+        old_bid: str,
+        new_bid: str,
+    ) -> None:
+        """
+        Immediately apply a block assignment change for a unit at a specific slot,
+        then write a log entry and refresh the schedule view.
+        """
+        if old_bid == new_bid:
+            ui.notify("Keine Änderung vorgenommen.", color="info")
+            return
+
+        errors = []
+
+        try:
+            # Remove the old block if present
+            if old_bid:
+                old_block = self.allocation.get_block_by_ID(old_bid)
+                if old_block:
+                    try:
+                        unit.schedule.remove_block(old_block, slot_id)
+                    except Exception:
+                        try:
+                            unit.schedule.remove_entry(old_block, slot_id)
+                        except Exception as ex:
+                            errors.append(f"Entfernen fehlgeschlagen: {ex}")
+                else:
+                    errors.append(f"Alter Block '{old_bid}' nicht gefunden")
+
+            # Add the new block if present
+            if new_bid:
+                new_block = self.allocation.get_block_by_ID(new_bid)
+                if new_block:
+                    try:
+                        unit.schedule.set_block(new_block, slot_id)
+                    except Exception as ex:
+                        errors.append(f"Hinzufügen fehlgeschlagen: {ex}")
+                else:
+                    errors.append(f"Neuer Block '{new_bid}' nicht gefunden")
+        except Exception as ex:
+            errors.append(str(ex))
+
+        # Build log entry
+        unit_label = f"Einheit {unit.ID}"
+        slot_label_log = slot_display
+
+        if errors:
+            log_entry = (
+                f"[FEHLER] Slot {slot_label_log} bei {unit_label}: " + "; ".join(errors)
+            )
+            ui.notify(f"Fehler: {'; '.join(errors)}", color="negative")
+        else:
+            log_parts = []
+            if old_bid and new_bid:
+                log_parts.append(
+                    f"Block {old_bid} entfernt bei {unit_label} in Slot {slot_label_log}."
+                )
+                log_parts.append(
+                    f"Block {new_bid} hinzugefügt bei {unit_label} in Slot {slot_label_log}."
+                )
+            elif old_bid and not new_bid:
+                log_parts.append(
+                    f"Block {old_bid} entfernt bei {unit_label} in Slot {slot_label_log} (Slot freigegeben)."
+                )
+            elif new_bid and not old_bid:
+                log_parts.append(
+                    f"Block {new_bid} hinzugefügt bei {unit_label} in Slot {slot_label_log}."
+                )
+            log_entry = " | ".join(log_parts)
+            ui.notify(log_entry, color="positive")
+
+        self.change_log.append(log_entry)
+
+        # Refresh schedule
+        try:
+            self.update_schedule()
+            self._update_slot_list_html()
+        except Exception:
+            pass
+
+    # --------------------
     # Build unit list HTML (for selected slot)
     # --------------------
     def _build_unit_list_html(self, slot_id: str) -> str:
-        """
-        Build an HTML table listing all units and what block they have in the given slot_id.
-        Columns: Unit.ID | block.ID or 'Frei' | block.data['fullname'] | block.data['ort']
-        """
         html_parts = []
         html_parts.append(
             '<table style="border-collapse: collapse; width: 100%; table-layout: fixed;">'
         )
-        # header
         html_parts.append("<thead>")
         html_parts.append("<tr>")
         headers = ["Einheit", "Block", "Titel", "Ort"]
@@ -509,16 +778,13 @@ class LeftDockApp:
             html_parts.append("</tbody></table>")
             return "\n".join(html_parts)
 
-        # ensure stable order
         units = sorted(
             getattr(self.allocation, "UNITS", []), key=lambda u: getattr(u, "ID", "")
         )
         for unit in units:
-            # default values
             block_id_text = "Frei"
             fullname = ""
             ort = ""
-            # attempt to find the element occupying that slot for this unit (including multi-slot elements)
             try:
                 occupied = unit.schedule.get_list(with_slot=True)
                 found = None
@@ -527,7 +793,6 @@ class LeftDockApp:
                     elem = entry.get("element")
                     if not start_slot or elem is None:
                         continue
-                    # compute length (if element provides data.length)
                     length = 1
                     try:
                         if hasattr(elem, "data") and isinstance(elem.data, dict):
@@ -535,7 +800,6 @@ class LeftDockApp:
                     except Exception:
                         length = 1
 
-                    # slots covered by this element: start_slot + next (length-1)
                     slots_covered = [start_slot]
                     if length > 1:
                         try:
@@ -550,7 +814,6 @@ class LeftDockApp:
                         break
 
                 if found is not None:
-                    # if the element is an object with ID attribute (block)
                     try:
                         bid = getattr(found, "ID", None)
                         if bid is not None:
@@ -559,7 +822,6 @@ class LeftDockApp:
                             block_id_text = str(found)
                     except Exception:
                         block_id_text = str(found)
-                    # try to read data fields
                     try:
                         if hasattr(found, "data") and isinstance(found.data, dict):
                             fullname = found.data.get("fullname", "") or ""
@@ -567,7 +829,6 @@ class LeftDockApp:
                     except Exception:
                         pass
             except Exception:
-                # in case schedule is absent or errors
                 pass
 
             html_parts.append(
@@ -587,13 +848,9 @@ class LeftDockApp:
     # Unit selection and rendering
     # --------------------
     def select_unit(self, unit, button_component=None) -> None:
-        """
-        Called when a unit button is clicked.
-        """
         self.current_unit = unit
         self.update_schedule()
 
-        # update the main title
         try:
             group = {"wo": "Wölfe", "pf": "Pfadis", "pi": "Pios", "pt": "PTA"}[
                 unit.group
@@ -604,26 +861,16 @@ class LeftDockApp:
         except Exception:
             pass
 
-        # Use DOM-level class toggling to indicate selection.
-        try:
-            ui.run_javascript(
-                f"""(function(){{
-                    // remove selected from any unit buttons
-                    document.querySelectorAll('.unit-btn').forEach(function(b){{ b.classList.remove('selected'); }});
-                    var el = document.getElementById('unit-btn-{unit.ID}');
-                    if (el) {{
-                        // ensure base class remains (in case it was changed); if not present, add it
-                        if (!el.classList.contains('unit-btn')) el.classList.add('unit-btn');
-                        el.classList.add('selected');
-                    }}
-                }})();"""
-            )
-        except Exception:
-            pass
+        for b in self.unit_buttons.values():
+            b.props("text-color=white")
+
+        button_component.props("text-color=black")
 
     def update_schedule(self) -> None:
         """
         Build schedule for current_unit and replace the schedule div's innerHTML.
+        The table is rendered with edit buttons (editable=True) since a unit is selected.
+        Also (re-)registers the JS bridge for cell edit clicks.
         """
         if not self.current_unit:
             filled = {}
@@ -665,7 +912,9 @@ class LeftDockApp:
             except Exception:
                 filled = {}
 
-        html = self._build_table_html(filled)
+        # Render with edit buttons only when a unit is selected
+        editable = self.current_unit is not None
+        html = self._build_table_html(filled, editable=editable)
         try:
             ui.run_javascript(
                 f"document.getElementById('schedule-table').innerHTML = `{html}`;"
@@ -673,15 +922,15 @@ class LeftDockApp:
         except Exception:
             pass
 
+        # Re-register the JS bridge after innerHTML replacement
+        if editable:
+            self._register_cell_edit_bridge()
+
     def export_current_unit_pdf(self) -> None:
-        """
-        Export current unit to PDF using IO.export_to_pdf.
-        """
         try:
             if not self.current_unit:
                 ui.notify("Keine Einheit ausgewählt", color="warning")
                 return
-            # call export function imported from IO
             try:
                 export_to_pdf(self.current_unit)
                 ui.notify(
@@ -696,13 +945,9 @@ class LeftDockApp:
     # Block selection and rendering
     # --------------------
     def select_block(self, block, button_component=None) -> None:
-        """
-        Called when a block button is clicked.
-        """
         self.current_block = block
         self.update_block_schedule()
 
-        # update title
         try:
             ui.run_javascript(
                 f"var t = document.getElementById('blocke-title'); if (t) t.innerHTML = '<h3>Block {block.ID} - {block.data['fullname']}</h3>';"
@@ -710,11 +955,9 @@ class LeftDockApp:
         except Exception:
             pass
 
-        # Use DOM-level class toggling to indicate block selection.
         try:
             ui.run_javascript(
                 f"""(function(){{
-                    // remove selected from any unit-btn (blocks share same styling)
                     document.querySelectorAll('.unit-btn').forEach(function(b){{ b.classList.remove('selected'); }});
                     var el = document.getElementById('block-btn-{block.ID}');
                     if (el) {{
@@ -727,9 +970,6 @@ class LeftDockApp:
             pass
 
     def update_block_schedule(self) -> None:
-        """
-        Build schedule for current_block: for each slot show the list of units (IDs) visiting that block.
-        """
         if not self.current_block:
             filled = {}
         else:
@@ -742,7 +982,6 @@ class LeftDockApp:
                     if not slot or unit_obj is None:
                         continue
                     unit_id = getattr(unit_obj, "ID", str(unit_obj))
-                    # color by unit group if available
                     bg = ""
                     fg = "#000"
                     try:
@@ -768,9 +1007,6 @@ class LeftDockApp:
             pass
 
     def export_current_block_pdf(self) -> None:
-        """
-        Export the currently selected block to PDF using IO.export_block_to_pdf.
-        """
         try:
             if not self.current_block:
                 ui.notify("Kein Block ausgewählt", color="warning")
@@ -786,373 +1022,382 @@ class LeftDockApp:
             pass
 
     # --------------------
-    # Editing dialogs and change application
+    # Editing dialogs (text-based, legacy)
     # --------------------
-    def open_unit_edit_dialog(self) -> None:
-        if not self.current_unit:
-            ui.notify("Keine Einheit ausgewählt", color="warning")
-            return
+    # def open_unit_edit_dialog(self) -> None:
+    #     if not self.current_unit:
+    #         ui.notify("Keine Einheit ausgewählt", color="warning")
+    #         return
 
-        unit = self.current_unit
-        initial_text = self._unit_schedule_to_text(unit)
+    #     unit = self.current_unit
+    #     initial_text = self._unit_schedule_to_text(unit)
 
-        with ui.dialog() as dlg:
-            ui.markdown(
-                f"### Edit schedule for unit {unit.ID} - {getattr(unit, 'fullname', '')}"
-            )
-            ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
+    #     with ui.dialog() as dlg:
+    #         ui.markdown(
+    #             f"### Edit schedule for unit {unit.ID} - {getattr(unit, 'fullname', '')}"
+    #         )
+    #         ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
 
-            def on_review(e=None):
-                # parse, stage changes, only close dialog and open review if parser staged changes
-                success = self._parse_unit_edit_text(unit, ta.value)
-                if success:
-                    dlg.close()
-                    self.open_review_dialog()
-                else:
-                    # keep dialog open so the user can correct input or try again
-                    # _parse_unit_edit_text already issues notifications on error/no changes
-                    pass
+    #         def on_review(e=None):
+    #             success = self._parse_unit_edit_text(unit, ta.value)
+    #             if success:
+    #                 dlg.close()
+    #                 self.open_review_dialog()
 
-            with ui.row():
-                ui.button("Review changes", on_click=on_review).props("unelevated")
-                ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-                    "unelevated"
-                )
-        dlg.open()
+    #         with ui.row():
+    #             ui.button("Review changes", on_click=on_review).props("unelevated")
+    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
+    #                 "unelevated"
+    #             )
+    #     dlg.open()
 
-    def _unit_schedule_to_text(self, unit) -> str:
-        # build a full list of slots A0..N4 and show current block id or empty
-        lines = []
-        # collect current mapping
-        current = {
-            entry["slot"]: getattr(entry["element"], "ID", "")
-            for entry in unit.schedule.get_list(with_slot=True)
-        }
-        for slot_index, slot_label in enumerate(SLOTS):
-            for col_index, _day in enumerate(DAYS):
-                slot_id = f"{chr(65 + col_index)}{slot_index}"
-                val = current.get(slot_id, "")
-                lines.append(f"{slot_id}:{val}")
-        return "\n".join(lines)
+    # def _unit_schedule_to_text(self, unit) -> str:
+    #     lines = []
+    #     current = {
+    #         entry["slot"]: getattr(entry["element"], "ID", "")
+    #         for entry in unit.schedule.get_list(with_slot=True)
+    #     }
+    #     for slot_index, slot_label in enumerate(SLOTS):
+    #         for col_index, _day in enumerate(DAYS):
+    #             slot_id = f"{chr(65 + col_index)}{slot_index}"
+    #             val = current.get(slot_id, "")
+    #             lines.append(f"{slot_id}:{val}")
+    #     return "\n".join(lines)
 
-    def _parse_unit_edit_text(self, unit, text: str) -> bool:
-        """
-        Parse user edited text and stage changes. Format per line: SLOT:BLOCKID (BLOCKID empty to remove)
-        Returns True if this parse resulted in new staged changes, False otherwise.
-        """
-        try:
-            start_len = len(self.pending_changes)
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            new_map = {}
-            for l in lines:
-                if ":" not in l:
-                    continue
-                slot, bid = l.split(":", 1)
-                slot = slot.strip()
-                bid = bid.strip()
-                new_map[slot] = bid
+    # def _parse_unit_edit_text(self, unit, text: str) -> bool:
+    #     try:
+    #         start_len = len(self.pending_changes)
+    #         lines = [l.strip() for l in text.splitlines() if l.strip()]
+    #         new_map = {}
+    #         for l in lines:
+    #             if ":" not in l:
+    #                 continue
+    #             slot, bid = l.split(":", 1)
+    #             slot = slot.strip()
+    #             bid = bid.strip()
+    #             new_map[slot] = bid
 
-            # current mapping
-            current = {
-                entry["slot"]: getattr(entry["element"], "ID", "")
-                for entry in unit.schedule.get_list(with_slot=True)
-            }
+    #         current = {
+    #             entry["slot"]: getattr(entry["element"], "ID", "")
+    #             for entry in unit.schedule.get_list(with_slot=True)
+    #         }
 
-            # compare and create pending changes (only append differences)
-            for slot, new_bid in new_map.items():
-                old_bid = current.get(slot, "")
-                if old_bid != new_bid:
-                    self.pending_changes.append(
-                        {
-                            "type": "unit",
-                            "unit_id": unit.ID,
-                            "slot": slot,
-                            "old": old_bid,
-                            "new": new_bid,
-                        }
-                    )
+    #         for slot, new_bid in new_map.items():
+    #             old_bid = current.get(slot, "")
+    #             if old_bid != new_bid:
+    #                 self.pending_changes.append(
+    #                     {
+    #                         "type": "unit",
+    #                         "unit_id": unit.ID,
+    #                         "slot": slot,
+    #                         "old": old_bid,
+    #                         "new": new_bid,
+    #                     }
+    #                 )
 
-            added = len(self.pending_changes) - start_len
-            if added > 0:
-                ui.notify(f"{added} changes staged", color="info")
-                return True
-            else:
-                ui.notify("No changes detected", color="positive")
-                return False
-        except Exception as e:
-            ui.notify(f"Failed to parse edits: {e}", color="negative")
-            return False
+    #         added = len(self.pending_changes) - start_len
+    #         if added > 0:
+    #             ui.notify(f"{added} changes staged", color="info")
+    #             return True
+    #         else:
+    #             ui.notify("No changes detected", color="positive")
+    #             return False
+    #     except Exception as e:
+    #         ui.notify(f"Failed to parse edits: {e}", color="negative")
+    #         return False
 
-    def open_block_edit_dialog(self) -> None:
-        if not self.current_block:
-            ui.notify("Kein Block ausgewählt", color="warning")
-            return
+    # def open_block_edit_dialog(self) -> None:
+    #     if not self.current_block:
+    #         ui.notify("Kein Block ausgewählt", color="warning")
+    #         return
 
-        block = self.current_block
-        initial_text = self._block_schedule_to_text(block)
+    #     block = self.current_block
+    #     initial_text = self._block_schedule_to_text(block)
 
-        with ui.dialog() as dlg:
-            ui.markdown(
-                f"### Edit schedule for block {block.ID} - {block.data.get('fullname', '')}"
-            )
-            ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
+    #     with ui.dialog() as dlg:
+    #         ui.markdown(
+    #             f"### Edit schedule for block {block.ID} - {block.data.get('fullname', '')}"
+    #         )
+    #         ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
 
-            def on_review(e=None):
-                # parse and stage changes; only close dialog if parsing added staged changes
-                success = self._parse_block_edit_text(block, ta.value)
-                if success:
-                    dlg.close()
-                    self.open_review_dialog()
-                else:
-                    # keep dialog open so the user can fix mistakes or try again
-                    pass
+    #         def on_review(e=None):
+    #             success = self._parse_block_edit_text(block, ta.value)
+    #             if success:
+    #                 dlg.close()
+    #                 self.open_review_dialog()
 
-            with ui.row():
-                ui.button("Review changes", on_click=on_review).props("unelevated")
-                ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-                    "unelevated"
-                )
-            dlg.open()
+    #         with ui.row():
+    #             ui.button("Review changes", on_click=on_review).props("unelevated")
+    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
+    #                 "unelevated"
+    #             )
+    #         dlg.open()
 
-    def _block_schedule_to_text(self, block) -> str:
-        # build a full list of slots A0..N4 and show comma-separated unit ids
-        lines = []
-        current_map = {}
-        for entry in block.schedule.get_list(with_slot=True):
-            slot = entry["slot"]
-            uid = getattr(entry["element"], "ID", "")
-            current_map.setdefault(slot, []).append(uid)
-        for slot_index, slot_label in enumerate(SLOTS):
-            for col_index, _day in enumerate(DAYS):
-                slot_id = f"{chr(65 + col_index)}{slot_index}"
-                ulist = current_map.get(slot_id, [])
-                lines.append(f"{slot_id}:{','.join(ulist)}")
-        return "\n".join(lines)
+    # def _block_schedule_to_text(self, block) -> str:
+    #     lines = []
+    #     current_map = {}
+    #     for entry in block.schedule.get_list(with_slot=True):
+    #         slot = entry["slot"]
+    #         uid = getattr(entry["element"], "ID", "")
+    #         current_map.setdefault(slot, []).append(uid)
+    #     for slot_index, slot_label in enumerate(SLOTS):
+    #         for col_index, _day in enumerate(DAYS):
+    #             slot_id = f"{chr(65 + col_index)}{slot_index}"
+    #             ulist = current_map.get(slot_id, [])
+    #             lines.append(f"{slot_id}:{','.join(ulist)}")
+    #     return "\n".join(lines)
 
-    def _parse_block_edit_text(self, block, text: str) -> bool:
-        """
-        Parse user edited text for block schedule. Format per line: SLOT:UID1,UID2,... (empty after colon means clear)
-        We stage a change record with old list and new list for each slot that differs.
-        Returns True if new staged changes were created, False otherwise.
-        """
-        try:
-            start_len = len(self.pending_changes)
-            lines = [l.strip() for l in text.splitlines() if l.strip()]
-            new_map = {}
-            for l in lines:
-                if ":" not in l:
-                    continue
-                slot, uids = l.split(":", 1)
-                slot = slot.strip()
-                uids = [u.strip() for u in uids.split(",") if u.strip()]
-                new_map[slot] = uids
+    # def _parse_block_edit_text(self, block, text: str) -> bool:
+    #     try:
+    #         start_len = len(self.pending_changes)
+    #         lines = [l.strip() for l in text.splitlines() if l.strip()]
+    #         new_map = {}
+    #         for l in lines:
+    #             if ":" not in l:
+    #                 continue
+    #             slot, uids = l.split(":", 1)
+    #             slot = slot.strip()
+    #             uids = [u.strip() for u in uids.split(",") if u.strip()]
+    #             new_map[slot] = uids
 
-            # current mapping
-            current_map = {}
-            for entry in block.schedule.get_list(with_slot=True):
-                slot = entry["slot"]
-                uid = getattr(entry["element"], "ID", "")
-                current_map.setdefault(slot, []).append(uid)
+    #         current_map = {}
+    #         for entry in block.schedule.get_list(with_slot=True):
+    #             slot = entry["slot"]
+    #             uid = getattr(entry["element"], "ID", "")
+    #             current_map.setdefault(slot, []).append(uid)
 
-            for slot, new_list in new_map.items():
-                old_list = current_map.get(slot, [])
-                # compare as sets (order not important)
-                if set(old_list) != set(new_list):
-                    self.pending_changes.append(
-                        {
-                            "type": "block",
-                            "block_id": block.ID,
-                            "slot": slot,
-                            "old": old_list,
-                            "new": new_list,
-                        }
-                    )
+    #         for slot, new_list in new_map.items():
+    #             old_list = current_map.get(slot, [])
+    #             if set(old_list) != set(new_list):
+    #                 self.pending_changes.append(
+    #                     {
+    #                         "type": "block",
+    #                         "block_id": block.ID,
+    #                         "slot": slot,
+    #                         "old": old_list,
+    #                         "new": new_list,
+    #                     }
+    #                 )
 
-            added = len(self.pending_changes) - start_len
-            if added > 0:
-                ui.notify(f"{added} changes staged", color="info")
-                return True
-            else:
-                ui.notify("No changes detected", color="positive")
-                return False
-        except Exception as e:
-            ui.notify(f"Failed to parse edits: {e}", color="negative")
-            return False
+    #         added = len(self.pending_changes) - start_len
+    #         if added > 0:
+    #             ui.notify(f"{added} changes staged", color="info")
+    #             return True
+    #         else:
+    #             ui.notify("No changes detected", color="positive")
+    #             return False
+    #     except Exception as e:
+    #         ui.notify(f"Failed to parse edits: {e}", color="negative")
+    #         return False
 
-    def open_review_dialog(self) -> None:
-        if not self.pending_changes:
-            ui.notify("No staged changes to review", color="info")
-            return
+    # def open_review_dialog(self) -> None:
+    #     if not self.pending_changes:
+    #         ui.notify("No staged changes to review", color="info")
+    #         return
 
-        with ui.dialog(persistent=True) as dlg:
-            ui.markdown("### Pending changes")
-            # build summary
-            md_lines = []
-            for i, ch in enumerate(self.pending_changes, start=1):
-                if ch["type"] == "unit":
-                    md_lines.append(
-                        f"{i}. Unit {ch['unit_id']} @ {ch['slot']}: '{ch['old']}' -> '{ch['new']}'"
-                    )
-                else:
-                    md_lines.append(
-                        f"{i}. Block {ch['block_id']} @ {ch['slot']}: '{','.join(ch['old'])}' -> '{','.join(ch['new'])}'"
-                    )
-            ui.markdown("\n".join(md_lines))
+    #     with ui.dialog() as dlg:
+    #         ui.markdown("### Pending changes")
+    #         md_lines = []
+    #         for i, ch in enumerate(self.pending_changes, start=1):
+    #             if ch["type"] == "unit":
+    #                 md_lines.append(
+    #                     f"{i}. Unit {ch['unit_id']} @ {ch['slot']}: '{ch['old']}' -> '{ch['new']}'"
+    #                 )
+    #             else:
+    #                 md_lines.append(
+    #                     f"{i}. Block {ch['block_id']} @ {ch['slot']}: '{','.join(ch['old'])}' -> '{','.join(ch['new'])}'"
+    #                 )
+    #         ui.markdown("\n".join(md_lines))
 
-            def on_confirm(e=None):
-                dlg.close()
-                self.apply_pending_changes()
+    #         def on_confirm(e=None):
+    #             dlg.close()
+    #             self.apply_pending_changes()
 
-            with ui.row():
-                ui.button("Confirm and apply", on_click=on_confirm).props("unelevated")
-                ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-                    "unelevated"
-                )
-        dlg.open()
+    #         with ui.row():
+    #             ui.button("Confirm and apply", on_click=on_confirm).props("unelevated")
+    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
+    #                 "unelevated"
+    #             )
+    #     dlg.open()
 
-    def apply_pending_changes(self) -> None:
-        """
-        Apply all staged changes to the Allocation object. This mutates schedules accordingly.
-        """
-        applied = 0
-        errors = []
-        # iterate over a copy to allow mutation
-        for ch in list(self.pending_changes):
-            try:
-                if ch["type"] == "unit":
-                    unit = self.allocation.get_unit_by_ID(ch["unit_id"])
-                    slot = ch["slot"]
-                    old_bid = ch["old"]
-                    new_bid = ch["new"]
-                    # remove old if present
-                    if old_bid:
-                        old_block = self.allocation.get_block_by_ID(old_bid)
-                        if old_block:
-                            try:
-                                unit.schedule.remove_block(old_block, slot)
-                            except Exception:
-                                # fallback: try remove_entry
-                                try:
-                                    unit.schedule.remove_entry(old_block, slot)
-                                except Exception:
-                                    pass
-                        else:
-                            errors.append(f"Old block '{old_bid}' not found")
-                    # add new if present
-                    if new_bid:
-                        new_block = self.allocation.get_block_by_ID(new_bid)
-                        if new_block:
-                            try:
-                                unit.schedule.set_block(new_block, slot)
-                            except Exception as e:
-                                errors.append(
-                                    f"Failed to set block {new_bid} for unit {unit.ID} at {slot}: {e}"
-                                )
-                        else:
-                            errors.append(f"New block '{new_bid}' not found")
+    # def apply_pending_changes(self) -> None:
+    #     applied = 0
+    #     errors = []
+    #     for ch in list(self.pending_changes):
+    #         try:
+    #             if ch["type"] == "unit":
+    #                 unit = self.allocation.get_unit_by_ID(ch["unit_id"])
+    #                 slot = ch["slot"]
+    #                 old_bid = ch["old"]
+    #                 new_bid = ch["new"]
+    #                 if old_bid:
+    #                     old_block = self.allocation.get_block_by_ID(old_bid)
+    #                     if old_block:
+    #                         try:
+    #                             unit.schedule.remove_block(old_block, slot)
+    #                         except Exception:
+    #                             try:
+    #                                 unit.schedule.remove_entry(old_block, slot)
+    #                             except Exception:
+    #                                 pass
+    #                     else:
+    #                         errors.append(f"Old block '{old_bid}' not found")
+    #                 if new_bid:
+    #                     new_block = self.allocation.get_block_by_ID(new_bid)
+    #                     if new_block:
+    #                         try:
+    #                             unit.schedule.set_block(new_block, slot)
+    #                         except Exception as e:
+    #                             errors.append(
+    #                                 f"Failed to set block {new_bid} for unit {unit.ID} at {slot}: {e}"
+    #                             )
+    #                     else:
+    #                         errors.append(f"New block '{new_bid}' not found")
+    #                 applied += 1
 
-                    applied += 1
+    #             elif ch["type"] == "block":
+    #                 block = self.allocation.get_block_by_ID(ch["block_id"])
+    #                 slot = ch["slot"]
+    #                 old_list = ch["old"]
+    #                 new_list = ch["new"]
+    #                 for uid in set(old_list) - set(new_list):
+    #                     unit_obj = self.allocation.get_unit_by_ID(uid)
+    #                     if unit_obj:
+    #                         try:
+    #                             block.schedule.remove_unit(unit_obj, slot)
+    #                         except Exception:
+    #                             try:
+    #                                 block.schedule.remove_entry(unit_obj, slot)
+    #                             except Exception:
+    #                                 pass
+    #                     else:
+    #                         errors.append(f"Unit '{uid}' to remove not found")
+    #                 for uid in set(new_list) - set(old_list):
+    #                     unit_obj = self.allocation.get_unit_by_ID(uid)
+    #                     if unit_obj:
+    #                         try:
+    #                             block.schedule.set_unit(unit_obj, slot)
+    #                         except Exception as e:
+    #                             errors.append(
+    #                                 f"Failed to add unit {uid} to block {block.ID} at {slot}: {e}"
+    #                             )
+    #                     else:
+    #                         errors.append(f"Unit '{uid}' to add not found")
+    #                 applied += 1
+    #         except Exception as e:
+    #             errors.append(str(e))
+    #         finally:
+    #             try:
+    #                 self.pending_changes.remove(ch)
+    #             except Exception:
+    #                 pass
 
-                elif ch["type"] == "block":
-                    block = self.allocation.get_block_by_ID(ch["block_id"])
-                    slot = ch["slot"]
-                    old_list = ch["old"]
-                    new_list = ch["new"]
-                    # remove units that are in old but not in new
-                    for uid in set(old_list) - set(new_list):
-                        unit_obj = self.allocation.get_unit_by_ID(uid)
-                        if unit_obj:
-                            try:
-                                block.schedule.remove_unit(unit_obj, slot)
-                            except Exception:
-                                try:
-                                    block.schedule.remove_entry(unit_obj, slot)
-                                except Exception:
-                                    pass
-                        else:
-                            errors.append(f"Unit '{uid}' to remove not found")
-                    # add units that are in new but not in old
-                    for uid in set(new_list) - set(old_list):
-                        unit_obj = self.allocation.get_unit_by_ID(uid)
-                        if unit_obj:
-                            try:
-                                block.schedule.set_unit(unit_obj, slot)
-                            except Exception as e:
-                                errors.append(
-                                    f"Failed to add unit {uid} to block {block.ID} at {slot}: {e}"
-                                )
-                        else:
-                            errors.append(f"Unit '{uid}' to add not found")
-                    applied += 1
-            except Exception as e:
-                errors.append(str(e))
-            finally:
-                try:
-                    self.pending_changes.remove(ch)
-                except Exception:
-                    pass
+    #     try:
+    #         self.update_schedule()
+    #         self.update_block_schedule()
+    #         self._update_slot_list_html()
+    #     except Exception:
+    #         pass
 
-        # refresh views
-        try:
-            self.update_schedule()
-            self.update_block_schedule()
-            self._update_slot_list_html()
-        except Exception:
-            pass
-
-        if errors:
-            ui.notify(
-                f"Applied {applied} changes with errors: {errors}", color="negative"
-            )
-        else:
-            ui.notify(f"Applied {applied} changes", color="positive")
+    #     if errors:
+    #         ui.notify(
+    #             f"Applied {applied} changes with errors: {errors}", color="negative"
+    #         )
+    #     else:
+    #         ui.notify(f"Applied {applied} changes", color="positive")
 
     # --------------------
-    # Save allocation helper & dialogs
+    # Save allocation — now shows change log and requires confirmation
     # --------------------
     def open_save_dialog(self) -> None:
         """
-        Open a dialog to save the current allocation to an xlsx file via IO.write_to_xlsx.
-        The dialog asks for a filename and confirms before writing.
+        Open a dialog that shows the full change log and asks for confirmation
+        before writing to xlsx. The user must confirm the log before saving.
         """
         if not self.allocation:
             ui.notify("Keine Allocation vorhanden", color="warning")
             return
+        print("Opening save dialog with change log:")
 
         with ui.dialog() as dlg:
-            ui.markdown("### Save Allocation")
-            ui.label("This will write the current allocation to an xlsx file.")
-            fname = ui.input("Filename", value="allocation.xlsx")
+            with ui.card().style("min-width: 560px; max-width: 800px; padding: 20px;"):
+                ui.markdown("### Allocation speichern")
 
-            def on_confirm(e=None):
-                dlg.close()
-                try:
-                    # attempt to write using the imported helper
-                    write_to_xlsx(self.allocation, fname=fname.value)
-                    ui.notify(f"Saved allocation to {fname.value}", color="positive")
-                except Exception as exc:
-                    ui.notify(f"Save failed: {exc}", color="negative")
+                # Show change log
+                if self.change_log:
+                    ui.markdown(
+                        f"**Änderungsprotokoll** ({len(self.change_log)} Einträge):"
+                    ).style("margin-bottom: 4px;")
+                    with ui.card().style(
+                        "background: #f8fafc; border: 1px solid #e2e8f0; "
+                        "padding: 12px; max-height: 320px; overflow-y: auto; "
+                        "font-family: monospace; font-size: 13px; line-height: 1.6;"
+                    ):
+                        for i, entry in enumerate(self.change_log, start=1):
+                            # Color errors differently
+                            color = (
+                                "#dc2626" if entry.startswith("[FEHLER]") else "#1e293b"
+                            )
+                            ui.html(
+                                f'<div style="color:{color}; padding: 2px 0; '
+                                f'border-bottom: 1px solid #f1f5f9;">'
+                                f'<span style="color:#94a3b8; margin-right:8px;">{i}.</span>'
+                                f"{entry}"
+                                f"</div>"
+                            )
+                else:
+                    ui.html(
+                        '<div style="color: #64748b; font-style: italic; padding: 12px 0;">'
+                        "Keine Änderungen protokolliert seit dem letzten Start."
+                        "</div>"
+                    )
 
-            with ui.row():
-                ui.button("Save", on_click=on_confirm).props("unelevated")
-                ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-                    "unelevated"
+                ui.separator().style("margin: 12px 0;")
+                ui.markdown(
+                    "Bitte überprüfe das Protokoll. Danach Dateinamen eingeben und bestätigen:"
+                ).style("color: #475569; font-size: 14px;")
+
+                fname = ui.input("Dateiname", value="allocation.xlsx").style(
+                    "width: 100%; margin-top: 8px;"
                 )
+
+                ui.separator().style("margin: 12px 0;")
+
+                with ui.row().style("gap: 8px; justify-content: flex-end;"):
+
+                    def on_cancel(e=None):
+                        dlg.close()
+
+                    def on_confirm(e=None):
+                        dlg.close()
+                        try:
+                            write_to_xlsx(self.allocation, fname=fname.value)
+                            ui.notify(
+                                f"Allocation gespeichert: {fname.value}",
+                                color="positive",
+                            )
+                            # Clear log after confirmed save
+                            self.change_log.clear()
+                        except Exception as exc:
+                            print(f"Error occurred while saving: {exc}")
+                            ui.notify(
+                                f"Speichern fehlgeschlagen: {exc}", color="negative"
+                            )
+
+                    ui.button("Abbrechen", on_click=on_cancel).props("unelevated flat")
+                    ui.button("✓ Bestätigen und speichern", on_click=on_confirm).props(
+                        "unelevated"
+                    ).style("background: #16a34a; color: white;")
+
         dlg.open()
 
     # --------------------
     # Slot selection for Auflistung pro Slot
     # --------------------
     def select_slot(self, slot_id: str) -> None:
-        """
-        Called when a slot cell/button is clicked in the slot picker.
-        Updates internal state, visual selection, and the unit list.
-        Also updates the Auflistung title to include day and slot label.
-        """
         if not slot_id:
             return
         self.selected_slot = slot_id
-        # update Auflistung title with day and slot label
         try:
             day_index = ord(slot_id[0]) - 65
             slot_index = int(slot_id[1:])
@@ -1163,51 +1408,34 @@ class LeftDockApp:
             )
         except Exception:
             pass
-        # update visual state of buttons
         self._apply_selected_slot_visual()
-        # update top unit list
         self._update_slot_list_html()
 
     def _apply_selected_slot_visual(self) -> None:
-        """
-        Toggle classes for slot buttons so currently selected slot is highlighted.
-        Uses DOM-level operations because some button objects don't support .classes().
-        """
         try:
-            # Use a single JS snippet to update all slot buttons' selected state
-            try:
-                ui.run_javascript(
-                    f"""(function(){{
-                        document.querySelectorAll('.slot-btn').forEach(function(b){{ b.classList.remove('selected'); }});
-                        var el = document.getElementById('slot-btn-{self.selected_slot}');
-                        if (el) el.classList.add('selected');
-                    }})();"""
-                )
-            except Exception:
-                pass
+            ui.run_javascript(
+                f"""(function(){{
+                    document.querySelectorAll('.slot-btn').forEach(function(b){{ b.classList.remove('selected'); }});
+                    var el = document.getElementById('slot-btn-{self.selected_slot}');
+                    if (el) el.classList.add('selected');
+                }})();"""
+            )
         except Exception:
             pass
 
     def _update_slot_list_html(self) -> None:
-        """
-        Rebuild the unit list HTML for self.selected_slot and replace the slot-list div's innerHTML.
-        """
         try:
             html = self._build_unit_list_html(self.selected_slot)
             ui.run_javascript(
                 f"document.getElementById('slot-list').innerHTML = `{html}`;"
             )
         except Exception:
-            # fallback: nothing
             pass
 
     # --------------------
     # Helpers
     # --------------------
     def _next_slots(self, slot_id: str, n: int) -> list:
-        """
-        Return next n slot ids after slot_id (wrap days/slots).
-        """
         slots = []
         if not slot_id or n <= 0:
             return slots
@@ -1230,7 +1458,6 @@ class LeftDockApp:
 
 
 if __name__ == "__main__":
-    # Initialize Allocation and data and create app instance
     a = Allocation(1)
     load_blocklist(a)
     load_unitlist(a, ignore_warnings=True)
@@ -1241,16 +1468,84 @@ if __name__ == "__main__":
     add_bogenscheissen_series(a)
     add_feuerwehr_series(a)
 
-    # Optionally read from xlsx; comment/uncomment as needed
-    try:
-        read_from_xlsx(a, filename="PRG_Programmzuteilung_allocation.xlsx")
-    except Exception:
-        pass
+    # Ask user to select a file to load at startup
+
+    with (
+        ui.dialog() as file_dialog,
+        ui.card().style("min-width: 400px; padding: 20px;"),
+    ):
+        import glob
+        import os
+
+        ui.markdown("### Please select an allocation file to load")
+
+        # Get all XLSX files in saves folder
+        saves_dir = "saves"
+        xlsx_files = glob.glob(os.path.join(saves_dir, "*.xlsx"))
+
+        # Sort by modification time (newest first)
+        xlsx_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+
+        # Create radio buttons for file selection
+        if xlsx_files:
+            file_radio = ui.radio(
+                {
+                    f"{os.path.basename(f)} {'(latest)' if f == xlsx_files[0] else ''}": f
+                    for f in xlsx_files
+                }
+            ).style("margin-bottom: 16px;")
+        else:
+            ui.label("No allocation files found in the saves folder.")
+            file_radio = None
+
+        def load_file():
+            try:
+                if file_radio and file_radio.value:
+                    selected_file = file_radio.value.split(" ")[
+                        0
+                    ]  # Get the actual filename without "(latest)"
+                    read_from_xlsx(a, filename=selected_file)
+                    file_dialog.close()
+                    ui.notify("File loaded successfully!")
+                else:
+                    ui.notify("Please select a file", color="warning")
+            except Exception as e:
+                ui.notify(f"Failed to load file: {e}", color="negative")
+
+        with ui.row().style("gap: 8px; justify-content: flex-end;"):
+            ui.button("Cancel", on_click=file_dialog.close).props("flat")
+            ui.button("Load", on_click=load_file).props("unelevated")
+
+    file_dialog.open()
 
     a.UNITS.sort(key=lambda u: u.ID)
     a.BLOCKS.sort(key=lambda b: b.ID)
 
     app = LeftDockApp(allocation=a)
+
+    # Wire up the hidden JS bridge trigger element.
+    # This invisible button is clicked by window._waehlbaer_editCell() in the browser,
+    # which passes the slot id via window._waehlbaer_pending_slot.
+    trigger_btn = (
+        ui.button("")
+        .props("id=_waehlbaer_cell_edit_trigger")
+        .style("display:none; position:absolute; pointer-events:none;")
+    )
+
+    async def _on_cell_edit_trigger(e=None):
+        print("Cell edit trigger clicked")
+        # Read the slot id that was stored in the JS global by the edit button
+        try:
+            result = await ui.run_javascript(
+                "window._waehlbaer_pending_slot || ''", timeout=2
+            )
+            slot_id = str(result).strip()
+            if slot_id:
+                app.open_cell_edit_dialog(slot_id)
+        except Exception:
+            pass
+
+    trigger_btn.on("click", _on_cell_edit_trigger)
 
     ui.run(
         title="Wählbär — Einheiten & Blöcke",

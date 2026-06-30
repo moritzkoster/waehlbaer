@@ -686,7 +686,7 @@ def slot_to_xlsx_cell(slot):
 
 def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
     workbook = xls.Workbook(os.path.join(path, fname))
-
+    allocation.remve_KC_from_all_blocks()
     merge_format = workbook.add_format(
         {
             "bold": 1,
@@ -697,11 +697,12 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
         }
     )
 
-    group_colors = {"wo": "#0db3bb", "pf": "#9c8566", "pi": "#c51f1f"}
+    group_colors = {"wo": "#0db3bb", "pf": "#9c8566", "pi": "#c51f1f", "pt": "#e87928"}
     green_format = workbook.add_format({"font_color": "#00b48f"})
     red_format = workbook.add_format({"font_color": "#f88589"})
     blue_format = workbook.add_format({"font_color": "#608ee4"})
     allocation.UNITS = sorted(allocation.UNITS, key=lambda e: e.ID)
+
     for iu, unit in enumerate(allocation.UNITS):
         # unit = allocation.UNITS[0]
         # print(f"Writing unit {unit.ID} to xlsx...")
@@ -866,7 +867,7 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
     ]
 
     for unit_n in unit_names:
-        if unit_n == "419":
+        if not a.get_unit_by_ID(unit_n) and unit_n == "419":
             a.append_unit(
                 Unit(
                     "419",
@@ -884,6 +885,7 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                     },
                 )
             )
+            print(f"Unit {unit_n} created.")
             continue
 
         if not a.get_unit_by_ID(unit_n):
