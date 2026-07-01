@@ -1,4 +1,5 @@
 saves/*
+history/*
 __pycache__*
 **log**
 # test.py

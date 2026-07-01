@@ -863,7 +863,7 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
     unit_names = [
         sheet_name
         for sheet_name in workbook.sheet_names
-        if not len(sheet_name.split("-")) == 2 and not sheet_name == "General Info"
+        if not len(sheet_name.split("-")) == 2 and not sheet_name == "Änderungen"
     ]
     block_names = [
         sheet_name

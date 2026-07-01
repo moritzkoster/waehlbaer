@@ -1403,18 +1403,46 @@ class LeftDockApp:
                                     f"{i + 1}. {entry}"
                                     for i, entry in enumerate(self.change_log)
                                 )
-                                log_data += "\n".join(
-                                    f"{i + 1}. {entry}"
-                                    for i, entry in enumerate(self.change_log)
-                                )
 
+                            # Save the file
                             write_to_xlsx(
                                 self.allocation, fname=fname.value, comment=log_data
                             )
-                            ui.notify(
-                                f"Allocation gespeichert: {fname.value}",
-                                color="positive",
+
+                            # Copy to history folder with datetime extension
+                            import os
+                            import shutil
+                            from datetime import datetime
+
+                            # Create history folder if it doesn't exist
+                            history_path = "history"
+                            if not os.path.exists(history_path):
+                                os.makedirs(history_path)
+
+                            # Generate filename with datetime
+                            base_name = os.path.splitext(fname.value)[0]
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            history_filename = f"{base_name}_{timestamp}.xlsx"
+                            history_filepath = os.path.join(
+                                history_path, history_filename
                             )
+
+                            # Copy the file to history folder
+                            try:
+                                shutil.copy2("saves/" + fname.value, history_filepath)
+                                ui.notify(
+                                    f"Allocation gespeichert: {fname.value}\nKopie in History: {history_filename}",
+                                    color="positive",
+                                )
+                            except Exception as copy_error:
+                                print(
+                                    f"Error occurred while copying to history: {copy_error}"
+                                )
+                                ui.notify(
+                                    f"Allocation gespeichert: {fname.value}\nSpeichern fehlgeschlagen: {copy_error}",
+                                    color="negative",
+                                )
+
                             # Clear log after confirmed save
                             self.change_log.clear()
                         except Exception as exc:
@@ -1529,7 +1557,9 @@ if __name__ == "__main__":
         if xlsx_files:
             file_radio = ui.radio(
                 {
-                    f"{os.path.basename(f)} {'(latest)' if f == xlsx_files[0] else ''}": f
+                    os.path.basename(
+                        f
+                    ): f"{os.path.basename(f)} {'(neustes)' if f == xlsx_files[0] else ''}"
                     for f in xlsx_files
                 }
             ).style("margin-bottom: 16px;")
@@ -1544,6 +1574,10 @@ if __name__ == "__main__":
                         0
                     ]  # Get the actual filename without "(latest)"
                     read_from_xlsx(a, filename=selected_file)
+
+                    # Store the loaded file name
+                    a.loaded_from = selected_file
+
                     file_dialog.close()
                     ui.notify("File loaded successfully!")
                 else:
