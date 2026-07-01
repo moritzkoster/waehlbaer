@@ -684,8 +684,13 @@ def slot_to_xlsx_cell(slot):
     return f"{chr(day + 1 + 65) + str(time + 1 + 2)}"
 
 
-def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves"):
+def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves", comment=""):
     workbook = xls.Workbook(os.path.join(path, fname))
+
+    # first sheet with general info
+    worksheet = workbook.add_worksheet("Änderungen")
+    worksheet.write(0, 0, comment)
+
     allocation.remve_KC_from_all_blocks()
     merge_format = workbook.add_format(
         {
@@ -858,7 +863,7 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
     unit_names = [
         sheet_name
         for sheet_name in workbook.sheet_names
-        if not len(sheet_name.split("-")) == 2
+        if not len(sheet_name.split("-")) == 2 and not sheet_name == "General Info"
     ]
     block_names = [
         sheet_name
@@ -983,6 +988,7 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                 if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
                     unit.schedule.set_entry(block, item["slot"])
     print("")
+    a.loaded_from = os.path.join(path, filename)
 
 
 def export_TN_overwiew_to_xlsx(allocation, fname="TN_Overview.xlsx", path="exports"):

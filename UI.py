@@ -1354,12 +1354,20 @@ class LeftDockApp:
 
                 ui.separator().style("margin: 12px 0;")
                 ui.markdown(
-                    "Bitte überprüfe das Protokoll. Danach Dateinamen eingeben und bestätigen:"
+                    "Bitte überprüfe das Protokoll. Danach Dateinamen und optional einen Kommentar eingeben und bestätigen:"
                 ).style("color: #475569; font-size: 14px;")
 
                 fname = ui.input("Dateiname", value="allocation.xlsx").style(
                     "width: 100%; margin-top: 8px;"
                 )
+
+                comment = ui.input(
+                    "Kommentar", placeholder="Optional: Zusätzliche Anmerkungen"
+                ).style("width: 100%; margin-top: 8px;")
+
+                ui.label(
+                    "Der Kommentar wird zusammen mit den Änderungen im Excel-File gespeichert."
+                ).style("color: #64748b; font-size: 13px; margin-top: 4px;")
 
                 ui.separator().style("margin: 12px 0;")
 
@@ -1371,7 +1379,38 @@ class LeftDockApp:
                     def on_confirm(e=None):
                         dlg.close()
                         try:
-                            write_to_xlsx(self.allocation, fname=fname.value)
+                            # Combine change log and comment into log_data
+                            log_data = "'"
+
+                            # Add comment if provided
+                            if comment.value:
+                                log_data += f"=== Kommentar ===\n{comment.value}\n\n"
+
+                            # Add change log entries
+                            if self.change_log:
+                                log_data += "=== Änderungen ===\n"
+                                # Add timestamp to log
+                                from datetime import datetime
+
+                                log_data += f"Datum: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+
+                                # Add base file information if available
+                                if hasattr(self.allocation, "loaded_from"):
+                                    log_data += f"Basiert auf: {self.allocation.loaded_from}\n\n"
+
+                                # Format log entries with numbering
+                                log_data += "\n".join(
+                                    f"{i + 1}. {entry}"
+                                    for i, entry in enumerate(self.change_log)
+                                )
+                                log_data += "\n".join(
+                                    f"{i + 1}. {entry}"
+                                    for i, entry in enumerate(self.change_log)
+                                )
+
+                            write_to_xlsx(
+                                self.allocation, fname=fname.value, comment=log_data
+                            )
                             ui.notify(
                                 f"Allocation gespeichert: {fname.value}",
                                 color="positive",
