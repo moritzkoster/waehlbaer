@@ -1104,6 +1104,9 @@ class Allocation:
             if block.ID == ID:
                 return block
         print(f"ERROR: could not find Block with ID '{ID}'")
+        man_ID = input("New ID to search: ")
+        if man_ID != "":
+            return self.get_block_by_ID(man_ID)
         return None
 
     def remve_KC_from_all_blocks(self):

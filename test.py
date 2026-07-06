@@ -1,6 +1,19 @@
+from IO import (
+    export_TN_overwiew_to_xlsx,
+    load_blocklist,
+    load_unitlist,
+    print_schedule,
+    write_to_xlsx,
+)
+from main import (
+    add_bogenscheissen_series,
+    add_dusche_series,
+    add_feuerwehr_series,
+    add_nacht_series,
+    add_wald_series,
+    read_from_xlsx,
+)
 from Wählbär import Allocation, Schedule
-from IO import print_schedule, write_to_xlsx, load_blocklist, load_unitlist, export_TN_overwiew_to_xlsx
-from main import add_dusche_series, add_nacht_series, add_wald_series, add_bogenscheissen_series, add_feuerwehr_series, read_from_xlsx
 
 RED = "\033[31m"
 YELLOW = "\033[33m"
@@ -25,7 +38,7 @@ export_TN_overwiew_to_xlsx(a, fname="TN_Overview.xlsx")
 N = 0
 for unit in a.UNITS:
     for ass in unit.schedule.get_list():
-        N +=  1
+        N += 1
 
 print(f"Total assignments: {N}")
 # PRINT UNITS
@@ -42,5 +55,3 @@ print(f"Total assignments: {N}")
 # for unit in a.UNITS:
 #     if "large_unit" in unit.tags:
 #         print(f"{YELLOW}{i:>2}: Large Unit{RESET}: {unit.ID} with {unit.n_people} TN"); i+=1
-
-

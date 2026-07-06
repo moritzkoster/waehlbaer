@@ -127,7 +127,7 @@ class LeftDockApp:
                     "width: 100%; min-height: 44px; text-align: left; padding-left: 12px;"
                 )
                 ui.button(
-                    "Save allocation",
+                    "Speichern...",
                     on_click=lambda e=None: self.open_save_dialog(),
                 ).props("unelevated").style(
                     "width: 100%; min-height: 44px; text-align: left; padding-left: 12px; background:#f3f4f6;"
@@ -175,7 +175,7 @@ class LeftDockApp:
                         with ui.row().style("flex-wrap: wrap; gap: 8px;"):
                             if self.allocation is not None:
                                 for unit in getattr(self.allocation, "UNITS", []):
-                                    print(f"creating button for unit: {unit.ID}")
+                                    # print(f"creating button for unit: {unit.ID}")
                                     group = getattr(unit, "group", "") or ""
                                     base_class = (
                                         f"unit-btn group-{group}"
@@ -333,6 +333,8 @@ class LeftDockApp:
                                             )
                                         except Exception:
                                             pass
+
+        print("UI initialized with sidebar and main area, views created.")
 
         self._views = {
             "einheiten": self.view_einheiten,
@@ -1544,7 +1546,7 @@ if __name__ == "__main__":
         import glob
         import os
 
-        ui.markdown("### Please select an allocation file to load")
+        ui.markdown("### Wähle eine Allocation-Datei zum Laden aus")
 
         # Get all XLSX files in saves folder
         saves_dir = "saves"
@@ -1573,12 +1575,15 @@ if __name__ == "__main__":
                     selected_file = file_radio.value.split(" ")[
                         0
                     ]  # Get the actual filename without "(latest)"
+                    print(f"Loading allocation from file: {selected_file}")
                     read_from_xlsx(a, filename=selected_file)
 
                     # Store the loaded file name
                     a.loaded_from = selected_file
+                    print(f"Allocation loaded from {a.loaded_from}")
 
                     file_dialog.close()
+                    print("File dialog closed after loading.")
                     ui.notify("File loaded successfully!")
                 else:
                     ui.notify("Please select a file", color="warning")
@@ -1586,8 +1591,8 @@ if __name__ == "__main__":
                 ui.notify(f"Failed to load file: {e}", color="negative")
 
         with ui.row().style("gap: 8px; justify-content: flex-end;"):
-            ui.button("Cancel", on_click=file_dialog.close).props("flat")
-            ui.button("Load", on_click=load_file).props("unelevated")
+            ui.button("Abbrechen", on_click=file_dialog.close).props("flat")
+            ui.button("Laden", on_click=load_file).props("unelevated")
 
     file_dialog.open()
 

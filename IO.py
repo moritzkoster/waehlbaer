@@ -64,7 +64,7 @@ def export_to_pdf(unit):
             placeholder_fullname = "{" + f"{slot}_fullname" + "}"
             if len(block) == 1:
                 block = block[0]
-                fulname_text = block.data["fullname"]
+                fullname_text = block.data["fullname"]
 
                 id_short = block.ID.split("_")[0]  # remove ON-11_XYZ -> ON-11
                 if id_short in ["ON-01", "ON-40", "ON-41", "ON-42", "ON-43"]:
@@ -73,9 +73,18 @@ def export_to_pdf(unit):
                     id_short += "**"
                 if id_short[:6] == "OTH-DU":
                     id_short = "Dusche"
-                    fulname_text = f"Zeit: {dusche_time(slot, block.ID)}"
+                    fullname_text = f"Zeit: {dusche_time(slot, block.ID)}"
+
+                if id_short[:5] == "ON-08":
+                    fullname_text = f"Wald: Fläche {flache_map(block.ID)}"
+                    id_short = "ON-08"
+
+                if id_short[:5] == "ON-05":
+                    fullname_text = f"Nachtaktivität:\nFläche {NA_map(block.ID)}"
+                    id_short = "ON-05"
+
                 replace_text_in_document(doc, placeholder_ID, id_short)
-                replace_text_in_document(doc, placeholder_fullname, fulname_text)
+                replace_text_in_document(doc, placeholder_fullname, fullname_text)
             elif len(block) == 0:
                 replace_text_in_document(doc, placeholder_ID, "")
                 replace_text_in_document(doc, placeholder_fullname, "")
@@ -166,7 +175,7 @@ def export_block_to_pdf(block):
             IDs = [unit.ID for unit in units]
             s = ", ".join(IDs)
             replace_text_in_document(doc, placeholder_ID, s)
-            # replace_text_in_document(doc, placeholder_fullname, fulname_text)
+            # replace_text_in_document(doc, placeholder_fullname, fullname_text)
 
     group_colors = {"wo": "#00b48f", "pf": "#4f2c1d", "pi": "#c6464a", "pt": "#e87928"}
 
@@ -213,6 +222,18 @@ def dusche_time(slot, block_ID):
         ["16:00-16:30", "16:30-17:00", "17:00-17:30", "17:30-18:00"],
         ["19:00-19:30", "19:30-20:00", "20:00-20:30", "20:30-21:00"],
     ][time][sub]
+
+
+def flache_map(block_ID):
+    id = ord(block_ID[-1]) - 65
+    map = ["4a", "4b", "5", "6a", "6b", "7a", "7b", "7c", "8a8b & 8c"]
+    return map[id]
+
+
+def NA_map(block_ID):
+    id = ord(block_ID[-1]) - 65
+    map = ["4a", "4b", "4c", "5", "8a", "8b", "8c", "8d", "NA 1", "NA 3"]
+    return map[id]
 
 
 def replace_text_in_paragraph(paragraph, placeholder, replacement):
@@ -857,7 +878,7 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves", comment="")
     workbook.close()
 
 
-def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
+def read_from_xlsx(a, path="saves", filename="allocation.xlsx", unit_truth=True):
     workbook = pd.ExcelFile(os.path.join(path, filename))
 
     unit_names = [
@@ -968,8 +989,16 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                     f"\n{FORMAT.RED}WARNUNG: Einheit {unit.ID} hat nicht Block {block.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}",
                     end="\n",
                 )
-                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                if unit_truth:
+                    print(
+                        f"{FORMAT.RED}Entferne {unit.ID} in Block {block.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}",
+                        end="\n",
+                    )
+                    block.schedule.remove_entry(unit, item["slot"])
+                elif input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
                     unit.schedule.set_entry(block, item["slot"])
+                else:
+                    block.schedule.remove_entry(unit, item["slot"])
     print("")
     for unit_n in unit_names:
         print(
@@ -985,8 +1014,17 @@ def read_from_xlsx(a, path="saves", filename="allocation.xlsx"):
                     f"\n{FORMAT.RED}WARNUNG: Block {block.ID} hat nicht Einheit {unit.ID} in Slot {slot_to_date(item['slot'])}{FORMAT.RESET}",
                     end="\n",
                 )
-                if input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
-                    unit.schedule.set_entry(block, item["slot"])
+                if unit_truth:
+                    print(
+                        f"{FORMAT.RED}Füge {unit.ID} in Block {block.ID} in Slot {slot_to_date(item['slot'])} hinzu {FORMAT.RESET}",
+                        end="\n",
+                    )
+                    block.schedule.set_entry(unit, item["slot"])
+                elif input("Soll ich Hinzufügen? (y/n): ").lower() == "y":
+                    block.schedule.set_entry(unit, item["slot"])
+
+                else:
+                    unit.schedule.remove_entry(block, item["slot"])
     print("")
     a.loaded_from = os.path.join(path, filename)
 
