@@ -1359,7 +1359,7 @@ class LeftDockApp:
                     "Bitte überprüfe das Protokoll. Danach Dateinamen und optional einen Kommentar eingeben und bestätigen:"
                 ).style("color: #475569; font-size: 14px;")
 
-                fname = ui.input("Dateiname", value="allocation.xlsx").style(
+                fname = ui.input("Dateiname", value="temp.xlsx").style(
                     "width: 100%; margin-top: 8px;"
                 )
 

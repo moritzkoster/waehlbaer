@@ -874,8 +874,27 @@ def write_to_xlsx(allocation, fname="allocation.xlsx", path="saves", comment="")
             worksheet.write(f"{chr(col + 65)}{row}", f"{key}:")
             worksheet.write(f"{chr(col + 65 + 1)}{row}", f"{value}")
             row += 1
-
+    copy_comments(allocation, workbook)
     workbook.close()
+
+
+def copy_comments(allocation, workbook):
+    from openpyxl import load_workbook
+
+    # Load the workbook
+    old_wb = load_workbook("saves/" + allocation.loaded_from)
+    for sheet_name in old_wb.sheetnames:
+        if sheet_name in workbook.sheetnames:
+            old_ws = old_wb[sheet_name]
+            new_ws = workbook.get_worksheet_by_name(sheet_name)
+            for row in old_ws.iter_rows():
+                for cell in row:
+                    if cell.comment:
+                        comment = cell.comment.text
+                        print(f"copy comment: {comment.replace('\n', '')}")
+                        new_ws.write_comment(cell.coordinate, comment)
+                        # new_cell = new_ws.cell(row=cell.row, column=cell.column)
+                        # new_cell.comment = cell.comment
 
 
 def read_from_xlsx(a, path="saves", filename="allocation.xlsx", unit_truth=True):
