@@ -752,6 +752,7 @@ class LeftDockApp:
 
         # Refresh schedule
         try:
+            self.allocation.remve_KC_from_all_blocks()
             self.update_schedule()
             self._update_slot_list_html()
         except Exception:
