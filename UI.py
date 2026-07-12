@@ -1571,25 +1571,37 @@ if __name__ == "__main__":
             file_radio = None
 
         def load_file():
-            try:
-                if file_radio and file_radio.value:
-                    selected_file = file_radio.value.split(" ")[
-                        0
-                    ]  # Get the actual filename without "(latest)"
-                    print(f"Loading allocation from file: {selected_file}")
-                    read_from_xlsx(a, filename=selected_file)
+            if file_radio and file_radio.value:
+                selected_file = file_radio.value.split(" ")[0]  # Get the actual filename without "(latest)"
 
-                    # Store the loaded file name
-                    a.loaded_from = selected_file
-                    print(f"Allocation loaded from {a.loaded_from}")
+                # Show loading indicator
+                ui.notify("Lade Datei...", color="info")
 
-                    file_dialog.close()
-                    print("File dialog closed after loading.")
-                    ui.notify("File loaded successfully!")
-                else:
-                    ui.notify("Please select a file", color="warning")
-            except Exception as e:
-                ui.notify(f"Failed to load file: {e}", color="negative")
+                # Run file loading in a separate thread to keep GUI responsive
+                import threading
+
+                def load_in_thread():
+                    try:
+                        print(f"Loading allocation from file: {selected_file}")
+                        read_from_xlsx(a, filename=selected_file)
+
+                        # Store the loaded file name
+                        a.loaded_from = selected_file
+                        print(f"Allocation loaded from {a.loaded_from}")
+
+                        # Close dialog and notify success
+                        file_dialog.close()
+                        print("File dialog closed after loading.")
+                        ui.notify("File loaded successfully!")
+
+                    except Exception as e:
+                        print(f"Error loading file: {e}")
+                        ui.notify(f"Failed to load file: {e}", color="negative")
+
+                # Start the loading thread
+                threading.Thread(target=load_in_thread, daemon=True).start()
+            else:
+                ui.notify("Please select a file", color="warning")
 
         with ui.row().style("gap: 8px; justify-content: flex-end;"):
             ui.button("Abbrechen", on_click=file_dialog.close).props("flat")
