@@ -10,6 +10,8 @@ from IO import (
     load_unitlist,
     read_from_xlsx,
     write_to_xlsx,
+    NA_map,
+    flache_map
 )
 from main import (
     add_bogenscheissen_series,
@@ -59,6 +61,13 @@ block_category_colors = {
     "workshop": {"bg": "#4f2c1d", "fg": "#ffffff"},
 }
 
+def block_button_name(ID):
+    if ID.startswith("ON-05") and len(ID) == 7:
+        return NA_map(ID)
+    elif ID.startswith("ON-08") and len(ID) == 7:
+        return flache_map(ID)
+    else:
+        return ID
 
 class LeftDockApp:
     """
@@ -252,7 +261,8 @@ class LeftDockApp:
                                         else "unit-btn"
                                     )
                                     btn_id = f"block-btn-{block.ID}"
-                                    btn = ui.button(str(block.ID)).props(f"id:{btn_id}")
+
+                                    btn = ui.button(block_button_name(str(block.ID))).props(f"id:{btn_id}")
                                     self.block_button_base_classes[block.ID] = (
                                         base_class
                                     )
@@ -636,7 +646,7 @@ class LeftDockApp:
                             )
                         except Exception:
                             fullname = ""
-                        label = f"{b.ID}"
+                        label = f"{block_button_name(b.ID)}"
                         if fullname:
                             label += f"  –  {fullname}"
                         block_options[str(b.ID)] = label
@@ -886,7 +896,7 @@ class LeftDockApp:
                     elem = entry.get("element")
                     if not slot or elem is None:
                         continue
-                    block_id = getattr(elem, "ID", str(elem))
+                    block_id = block_button_name(getattr(elem, "ID", str(elem)))
                     length = 1
                     try:
                         if hasattr(elem, "data") and isinstance(elem.data, dict):
@@ -953,7 +963,7 @@ class LeftDockApp:
 
         try:
             ui.run_javascript(
-                f"var t = document.getElementById('blocke-title'); if (t) t.innerHTML = '<h3>Block {block.ID} - {block.data['fullname']}</h3>';"
+                f"var t = document.getElementById('blocke-title'); if (t) t.innerHTML = '<h3>Block {block_button_name(block.ID)} - {block.data['fullname']}</h3>';"
             )
         except Exception:
             pass
@@ -1023,291 +1033,6 @@ class LeftDockApp:
                 ui.notify(f"Export fehlgeschlagen: {e}", color="negative")
         except Exception:
             pass
-
-    # --------------------
-    # Editing dialogs (text-based, legacy)
-    # --------------------
-    # def open_unit_edit_dialog(self) -> None:
-    #     if not self.current_unit:
-    #         ui.notify("Keine Einheit ausgewählt", color="warning")
-    #         return
-
-    #     unit = self.current_unit
-    #     initial_text = self._unit_schedule_to_text(unit)
-
-    #     with ui.dialog() as dlg:
-    #         ui.markdown(
-    #             f"### Edit schedule for unit {unit.ID} - {getattr(unit, 'fullname', '')}"
-    #         )
-    #         ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
-
-    #         def on_review(e=None):
-    #             success = self._parse_unit_edit_text(unit, ta.value)
-    #             if success:
-    #                 dlg.close()
-    #                 self.open_review_dialog()
-
-    #         with ui.row():
-    #             ui.button("Review changes", on_click=on_review).props("unelevated")
-    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-    #                 "unelevated"
-    #             )
-    #     dlg.open()
-
-    # def _unit_schedule_to_text(self, unit) -> str:
-    #     lines = []
-    #     current = {
-    #         entry["slot"]: getattr(entry["element"], "ID", "")
-    #         for entry in unit.schedule.get_list(with_slot=True)
-    #     }
-    #     for slot_index, slot_label in enumerate(SLOTS):
-    #         for col_index, _day in enumerate(DAYS):
-    #             slot_id = f"{chr(65 + col_index)}{slot_index}"
-    #             val = current.get(slot_id, "")
-    #             lines.append(f"{slot_id}:{val}")
-    #     return "\n".join(lines)
-
-    # def _parse_unit_edit_text(self, unit, text: str) -> bool:
-    #     try:
-    #         start_len = len(self.pending_changes)
-    #         lines = [l.strip() for l in text.splitlines() if l.strip()]
-    #         new_map = {}
-    #         for l in lines:
-    #             if ":" not in l:
-    #                 continue
-    #             slot, bid = l.split(":", 1)
-    #             slot = slot.strip()
-    #             bid = bid.strip()
-    #             new_map[slot] = bid
-
-    #         current = {
-    #             entry["slot"]: getattr(entry["element"], "ID", "")
-    #             for entry in unit.schedule.get_list(with_slot=True)
-    #         }
-
-    #         for slot, new_bid in new_map.items():
-    #             old_bid = current.get(slot, "")
-    #             if old_bid != new_bid:
-    #                 self.pending_changes.append(
-    #                     {
-    #                         "type": "unit",
-    #                         "unit_id": unit.ID,
-    #                         "slot": slot,
-    #                         "old": old_bid,
-    #                         "new": new_bid,
-    #                     }
-    #                 )
-
-    #         added = len(self.pending_changes) - start_len
-    #         if added > 0:
-    #             ui.notify(f"{added} changes staged", color="info")
-    #             return True
-    #         else:
-    #             ui.notify("No changes detected", color="positive")
-    #             return False
-    #     except Exception as e:
-    #         ui.notify(f"Failed to parse edits: {e}", color="negative")
-    #         return False
-
-    # def open_block_edit_dialog(self) -> None:
-    #     if not self.current_block:
-    #         ui.notify("Kein Block ausgewählt", color="warning")
-    #         return
-
-    #     block = self.current_block
-    #     initial_text = self._block_schedule_to_text(block)
-
-    #     with ui.dialog() as dlg:
-    #         ui.markdown(
-    #             f"### Edit schedule for block {block.ID} - {block.data.get('fullname', '')}"
-    #         )
-    #         ta = ui.textarea(initial_text).style("width:100%; min-height: 300px;")
-
-    #         def on_review(e=None):
-    #             success = self._parse_block_edit_text(block, ta.value)
-    #             if success:
-    #                 dlg.close()
-    #                 self.open_review_dialog()
-
-    #         with ui.row():
-    #             ui.button("Review changes", on_click=on_review).props("unelevated")
-    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-    #                 "unelevated"
-    #             )
-    #         dlg.open()
-
-    # def _block_schedule_to_text(self, block) -> str:
-    #     lines = []
-    #     current_map = {}
-    #     for entry in block.schedule.get_list(with_slot=True):
-    #         slot = entry["slot"]
-    #         uid = getattr(entry["element"], "ID", "")
-    #         current_map.setdefault(slot, []).append(uid)
-    #     for slot_index, slot_label in enumerate(SLOTS):
-    #         for col_index, _day in enumerate(DAYS):
-    #             slot_id = f"{chr(65 + col_index)}{slot_index}"
-    #             ulist = current_map.get(slot_id, [])
-    #             lines.append(f"{slot_id}:{','.join(ulist)}")
-    #     return "\n".join(lines)
-
-    # def _parse_block_edit_text(self, block, text: str) -> bool:
-    #     try:
-    #         start_len = len(self.pending_changes)
-    #         lines = [l.strip() for l in text.splitlines() if l.strip()]
-    #         new_map = {}
-    #         for l in lines:
-    #             if ":" not in l:
-    #                 continue
-    #             slot, uids = l.split(":", 1)
-    #             slot = slot.strip()
-    #             uids = [u.strip() for u in uids.split(",") if u.strip()]
-    #             new_map[slot] = uids
-
-    #         current_map = {}
-    #         for entry in block.schedule.get_list(with_slot=True):
-    #             slot = entry["slot"]
-    #             uid = getattr(entry["element"], "ID", "")
-    #             current_map.setdefault(slot, []).append(uid)
-
-    #         for slot, new_list in new_map.items():
-    #             old_list = current_map.get(slot, [])
-    #             if set(old_list) != set(new_list):
-    #                 self.pending_changes.append(
-    #                     {
-    #                         "type": "block",
-    #                         "block_id": block.ID,
-    #                         "slot": slot,
-    #                         "old": old_list,
-    #                         "new": new_list,
-    #                     }
-    #                 )
-
-    #         added = len(self.pending_changes) - start_len
-    #         if added > 0:
-    #             ui.notify(f"{added} changes staged", color="info")
-    #             return True
-    #         else:
-    #             ui.notify("No changes detected", color="positive")
-    #             return False
-    #     except Exception as e:
-    #         ui.notify(f"Failed to parse edits: {e}", color="negative")
-    #         return False
-
-    # def open_review_dialog(self) -> None:
-    #     if not self.pending_changes:
-    #         ui.notify("No staged changes to review", color="info")
-    #         return
-
-    #     with ui.dialog() as dlg:
-    #         ui.markdown("### Pending changes")
-    #         md_lines = []
-    #         for i, ch in enumerate(self.pending_changes, start=1):
-    #             if ch["type"] == "unit":
-    #                 md_lines.append(
-    #                     f"{i}. Unit {ch['unit_id']} @ {ch['slot']}: '{ch['old']}' -> '{ch['new']}'"
-    #                 )
-    #             else:
-    #                 md_lines.append(
-    #                     f"{i}. Block {ch['block_id']} @ {ch['slot']}: '{','.join(ch['old'])}' -> '{','.join(ch['new'])}'"
-    #                 )
-    #         ui.markdown("\n".join(md_lines))
-
-    #         def on_confirm(e=None):
-    #             dlg.close()
-    #             self.apply_pending_changes()
-
-    #         with ui.row():
-    #             ui.button("Confirm and apply", on_click=on_confirm).props("unelevated")
-    #             ui.button("Cancel", on_click=lambda e=None: dlg.close()).props(
-    #                 "unelevated"
-    #             )
-    #     dlg.open()
-
-    # def apply_pending_changes(self) -> None:
-    #     applied = 0
-    #     errors = []
-    #     for ch in list(self.pending_changes):
-    #         try:
-    #             if ch["type"] == "unit":
-    #                 unit = self.allocation.get_unit_by_ID(ch["unit_id"])
-    #                 slot = ch["slot"]
-    #                 old_bid = ch["old"]
-    #                 new_bid = ch["new"]
-    #                 if old_bid:
-    #                     old_block = self.allocation.get_block_by_ID(old_bid)
-    #                     if old_block:
-    #                         try:
-    #                             unit.schedule.remove_block(old_block, slot)
-    #                         except Exception:
-    #                             try:
-    #                                 unit.schedule.remove_entry(old_block, slot)
-    #                             except Exception:
-    #                                 pass
-    #                     else:
-    #                         errors.append(f"Old block '{old_bid}' not found")
-    #                 if new_bid:
-    #                     new_block = self.allocation.get_block_by_ID(new_bid)
-    #                     if new_block:
-    #                         try:
-    #                             unit.schedule.set_block(new_block, slot)
-    #                         except Exception as e:
-    #                             errors.append(
-    #                                 f"Failed to set block {new_bid} for unit {unit.ID} at {slot}: {e}"
-    #                             )
-    #                     else:
-    #                         errors.append(f"New block '{new_bid}' not found")
-    #                 applied += 1
-
-    #             elif ch["type"] == "block":
-    #                 block = self.allocation.get_block_by_ID(ch["block_id"])
-    #                 slot = ch["slot"]
-    #                 old_list = ch["old"]
-    #                 new_list = ch["new"]
-    #                 for uid in set(old_list) - set(new_list):
-    #                     unit_obj = self.allocation.get_unit_by_ID(uid)
-    #                     if unit_obj:
-    #                         try:
-    #                             block.schedule.remove_unit(unit_obj, slot)
-    #                         except Exception:
-    #                             try:
-    #                                 block.schedule.remove_entry(unit_obj, slot)
-    #                             except Exception:
-    #                                 pass
-    #                     else:
-    #                         errors.append(f"Unit '{uid}' to remove not found")
-    #                 for uid in set(new_list) - set(old_list):
-    #                     unit_obj = self.allocation.get_unit_by_ID(uid)
-    #                     if unit_obj:
-    #                         try:
-    #                             block.schedule.set_unit(unit_obj, slot)
-    #                         except Exception as e:
-    #                             errors.append(
-    #                                 f"Failed to add unit {uid} to block {block.ID} at {slot}: {e}"
-    #                             )
-    #                     else:
-    #                         errors.append(f"Unit '{uid}' to add not found")
-    #                 applied += 1
-    #         except Exception as e:
-    #             errors.append(str(e))
-    #         finally:
-    #             try:
-    #                 self.pending_changes.remove(ch)
-    #             except Exception:
-    #                 pass
-
-    #     try:
-    #         self.update_schedule()
-    #         self.update_block_schedule()
-    #         self._update_slot_list_html()
-    #     except Exception:
-    #         pass
-
-    #     if errors:
-    #         ui.notify(
-    #             f"Applied {applied} changes with errors: {errors}", color="negative"
-    #         )
-    #     else:
-    #         ui.notify(f"Applied {applied} changes", color="positive")
 
     # --------------------
     # Save allocation — now shows change log and requires confirmation
