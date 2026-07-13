@@ -984,29 +984,33 @@ class Unit:
                 self.tags.add("frechdachs")
 
     def __repr__(self):
-        s = dedent(f"""
-            \033[1m\033[34m{self.ID}: {self.fullname} {self.group}\033[0m
-            n_people: {self.n_people} | email: {self.email}
-            contact: {self.contact} | wasser_anerk: {self.wasser_anerk}
-            more_or_less: {self.more_or_less} | cf: {self.score_cf:.3f} | tags: {YELLOW}{BOLD} {", ".join(self.tags)} {RESET}
-            """)
-        s += f"  \033[1mGeneral:\033[0m\n"
-        i = 0
-        for key, val in self.general.items():
-            s += f"  {GREEN if val else RED}{key:>18}: {val:<5}{RESET}"
-            if i % 4 == 3 or i == len(self.general) - 1:
-                s += "\n"
-            i += 1
+        try:
+            s = dedent(f"""
+                \033[1m\033[34m{self.ID}: {self.fullname} {self.group}\033[0m
+                n_people: {self.n_people} | email: {self.email}
+                contact: {self.contact} | wasser_anerk: {self.wasser_anerk}
+                more_or_less: {self.more_or_less} | cf: {self.score_cf:.3f} | tags: {YELLOW}{BOLD} {", ".join(self.tags)} {RESET}
+                """)
+            s += f"  \033[1mGeneral:\033[0m\n"
+            i = 0
+            for key, val in self.general.items():
+                s += f"  {GREEN if val else RED}{key:>18}: {val:<5}{RESET}"
+                if i % 4 == 3 or i == len(self.general) - 1:
+                    s += "\n"
+                i += 1
 
-        for cat, prio_list in self.prios_sorted.items():
-            if self.general[cat]:
-                s += f"  \033[1m{cat}:\033[0m\n"
-                for ip, prio in enumerate(prio_list):
-                    s += f"  {prio['ID']:>18}: {prio['value']:>2} {'(A)' if self.has_block(prio) else ''}"
-                    if ip % 4 == 3 or ip == len(prio_list) - 1:
-                        s += "\n"
+            for cat, prio_list in self.prios_sorted.items():
+                if self.general[cat]:
+                    s += f"  \033[1m{cat}:\033[0m\n"
+                    for ip, prio in enumerate(prio_list):
+                        s += f"  {prio['ID']:>18}: {prio['value']:>2} {'(A)' if self.has_block(prio) else ''}"
+                        if ip % 4 == 3 or ip == len(prio_list) - 1:
+                            s += "\n"
 
-        return s
+            return s
+        except Exception as e:
+            print(e)
+            return f"{self.ID}: {self.fullname} ({self.group})"
 
 
 class SearchResult:
