@@ -456,14 +456,14 @@ class LeftDockApp:
     def _build_table_html(self, occupied_map: dict, editable: bool = False) -> str:
         """
         Build and return HTML for the schedule table.
-        occupied_map: dict mapping slot_id like 'A0' -> dict with keys 'text', optional 'bg', 'fg'
+        occupied_map: dict mapping slot_id like 'A0' -> dict with keys 'text', optional 'bg', 'fg', 'units'
         editable: if True, each cell gets a small pencil button that calls
                   window._waehlbaer_editCell(slot_id) — which is bridged to Python via the
                   NiceGUI element's onclick mechanism set up separately.
         """
         html_parts = []
         html_parts.append(
-            '<table style="border-collapse: collapse; width: 100%; table-layout: fixed;">'
+            '<table style="border-collapse: collapse; width: 100%; table-layout: fixed; word-wrap: break-word; word-break: break-word; white-space: normal;">'
         )
         # header
         html_parts.append("<thead>")
@@ -506,31 +506,89 @@ class LeftDockApp:
                     cell_text = ""
 
                 if editable:
-                    # Edit button calls a global JS function bridged to Python
+                    # Edit button calls a global JS function that will trigger the Python method
                     edit_btn = (
                         f'<button class="cell-edit-btn" '
-                        f"onclick=\"window._waehlbaer_editCell('{slot_id}')\" "
-                        f'title="Slot bearbeiten">✏️</button>'
+                        f"onclick='window._waehlbaer_editCell('{slot_id}')'"
+                        f"title='Slot bearbeiten'>✏️</button>'"
                     )
+
+                    # Check if this is a block schedule (has units list)
+                    units = occupied_map.get(slot_id, {}).get("units", [])
+
+                    # Create cell content with tooltip for units
                     cell_content = (
                         f'<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; '
                         f'flex:1; display:inline-block; vertical-align:middle;">{cell_text}</span>'
                         f"{edit_btn}"
                     )
-                    cell_inner_style = (
-                        "display:flex; align-items:center; justify-content:space-between; "
-                        "width:100%; height:100%;"
-                    )
-                    html_parts.append(
-                        f'<td style="{cell_style}">'
-                        f'<div style="{cell_inner_style}">{cell_content}</div>'
-                        f"</td>"
-                    )
+
+                    # Add tooltip for units if multiple units are assigned
+                    # Add hover tooltip for units
+                    if units and len(units) > 1:
+                        tooltip_text = ", ".join(units)
+                        cell_inner_style = (
+                            f"display:flex; align-items:center; justify-content:space-between; "
+                            f"width:100%; height:100%;"
+                            f"position: relative;"
+                        )
+                        html_parts.append(
+                            f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; table-layout: fixed; max-width: 100%; white-space: normal;" '
+                            f'title="Alle Einheiten: {tooltip_text}">'
+                            f'<div style="{cell_inner_style}">{cell_content}</div>'
+                            f'</td>'
+                        )
+                    else:
+                        cell_inner_style = (
+                            "display:flex; align-items:center; justify-content:space-between; "
+                            "width:100%; height:100%;"
+                        )
+                        html_parts.append(
+                            f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; table-layout: fixed; max-width: 100%; white-space: normal;">'
+                            f'<div style="{cell_inner_style}">{cell_content}</div>'
+                            f'</td>'
+                        )
                 else:
-                    html_parts.append(
-                        f'<td style="{cell_style}; text-overflow:ellipsis; white-space:nowrap;">'
-                        f"{cell_text}</td>"
-                    )
+                    # Check if this is a block schedule (has units list)
+                    units = occupied_map.get(slot_id, {}).get("units", [])
+
+                    # Add hover tooltip for units
+                    if units and len(units) > 1:
+                        tooltip_text = ", ".join(units)
+                        html_parts.append(
+                            f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; white-space: normal;" '
+                            f'title="{tooltip_text}">'
+                            f"{cell_text}</td>'"
+                        )
+                    else:
+                        # Check if this is a block schedule (has units list)
+                        units = occupied_map.get(slot_id, {}).get("units", [])
+
+                        # Add hover tooltip for units
+                        if units and len(units) > 1:
+                            tooltip_text = ", ".join(units)
+                            html_parts.append(
+                                f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; white-space: normal;" '
+                                f'title="{tooltip_text}">'
+                                f"{cell_text}</td>"
+                            )
+                        else:
+                            # Check if this is a block schedule (has units list)
+                            units = occupied_map.get(slot_id, {}).get("units", [])
+
+                            # Add hover tooltip for units
+                            if units and len(units) > 1:
+                                tooltip_text = ", ".join(units)
+                                html_parts.append(
+                                    f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; white-space: normal;" '
+                                    f'title="Alle Einheiten: {tooltip_text}">'
+                                    f"{cell_text}</td>"
+                                )
+                            else:
+                                html_parts.append(
+                                    f'<td style="{cell_style}; min-width: 0; word-wrap: break-word; overflow: visible; white-space: normal;">'
+                                    f"{cell_text}</td>"
+                                )
             html_parts.append("</tr>")
         html_parts.append("</tbody>")
         html_parts.append("</table>")
@@ -1005,10 +1063,15 @@ class LeftDockApp:
                             fg = "#ffffff"
                     except Exception:
                         pass
-                    if slot in filled and filled[slot].get("text"):
+
+                    # Store the full list of unit IDs for hover display
+                    if slot in filled:
+                        if "units" not in filled[slot]:
+                            filled[slot]["units"] = []
+                        filled[slot]["units"].append(unit_id)
                         filled[slot]["text"] = f"{filled[slot]['text']}, {unit_id}"
                     else:
-                        filled[slot] = {"text": str(unit_id), "bg": bg, "fg": fg}
+                        filled[slot] = {"text": str(unit_id), "bg": bg, "fg": fg, "units": [unit_id]}
             except Exception:
                 filled = {}
 
