@@ -1,4 +1,5 @@
 # waehlbaer/UI.py
+from reprlib import aRepr
 from typing import Dict, List, Optional
 
 from nicegui import ui
@@ -22,7 +23,7 @@ from main import (
 )
 
 # Project imports (keep these so the UI can use your existing data structures)
-from Wählbär import Allocation
+from Wählbär import Allocation, Block, MetaBlock
 
 # Days (14) and slots (5)
 DAYS = [
@@ -1335,7 +1336,16 @@ if __name__ == "__main__":
     file_dialog.open()
 
     a.UNITS.sort(key=lambda u: u.ID)
-    a.BLOCKS.sort(key=lambda b: b.ID)
+
+    a.BLOCKS = [b for b in a.BLOCKS if not isinstance(b, MetaBlock)]  # Filter out inactive blocks
+    def sort_key(b):
+        try:
+            # Extract the numeric part after the dash in the ID for sorting
+            return int(b.ID.split("_")[0].split("-")[1]) + b.ID.split("_")[0].split("-")[0] == "OFF" * 1000
+        except Exception as e:
+            print(e)
+            return float('inf')  # Place any blocks with unexpected IDs at the end
+    a.BLOCKS.sort(key=sort_key)
 
     app = LeftDockApp(allocation=a)
 

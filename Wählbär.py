@@ -982,6 +982,8 @@ class Unit:
             self.score_cf = total / 89 * self.more_or_less / 5
             if total < 30:
                 self.tags.add("frechdachs")
+        if self.group == "pt":
+            self.score_cf = 1.0
 
     def __repr__(self):
         try:
