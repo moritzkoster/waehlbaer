@@ -513,8 +513,8 @@ class LeftDockApp:
                         f'title="Slot bearbeiten">✏️</button>'
                     )
                     cell_content = (
-                        f'<span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; '
-                        f'flex:1; display:inline-block; vertical-align:middle;">{cell_text}</span>'
+                        f'<span style="overflow:hidden; text-overflow:wrap; white-space:nowrap; '
+                        f'flex:1; display:inline-block; vertical-align:middle;" data-tooltip="{cell_text}">{cell_text}</span>'
                         f"{edit_btn}"
                     )
                     cell_inner_style = (
@@ -849,7 +849,7 @@ class LeftDockApp:
                 "<tr>"
                 f'<td style="border:1px solid #eee; padding:6px; width:100px; max-width:100px;">{unit.ID}</td>'
                 f'<td style="border:1px solid #eee; padding:6px; width:60px; max-width:60px;">{block_id_text}</td>'
-                f'<td style="border:1px solid #eee; padding:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{fullname}</td>'
+                f'<td style="border:1px solid #eee; padding:6px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{fullname}">{fullname}</td>'
                 f'<td style="border:1px solid #eee; padding:6px; width:120px; max-width:120px;">{ort}</td>'
                 "</tr>"
             )
