@@ -1309,6 +1309,7 @@ if __name__ == "__main__":
                 def load_in_thread():
                     try:
                         print(f"Loading allocation from file: {selected_file}")
+                        a.clear_schedules()
                         read_from_xlsx(a, filename=selected_file)
 
                         # Store the loaded file name
