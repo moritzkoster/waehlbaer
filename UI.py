@@ -110,6 +110,7 @@ class LeftDockApp:
 
         # Pending changes staged by the user
         self.pending_changes: List[dict] = []
+        self.has_unsaved_changes: bool = False
 
         # Change log: human-readable German strings of every applied allocation change
         self.change_log: List[str] = []
@@ -142,8 +143,15 @@ class LeftDockApp:
                 ).props("unelevated").style(
                     "width: 100%; min-height: 44px; text-align: left; padding-left: 12px; background:#f3f4f6;"
                 ).props("color=orange")
+                self.unsaved_changes_label = ui.label("Keine Änderungen").classes("text-xs")
+                self._update_unsaved_changes_label()
+
                 ui.separator()
                 ui.label("Status: ready").classes("text-xs")
+
+            # Add a label for unsaved changes
+            # self.unsaved_changes_label = ui.label("Keine Änderungen").classes("text-xs")
+            # self._update_unsaved_changes_label()
 
             # main area
             with ui.column().style(
@@ -431,6 +439,15 @@ class LeftDockApp:
     # --------------------
     # View control helpers
     # --------------------
+    def _update_unsaved_changes_label(self) -> None:
+        """Update the UI label for unsaved changes."""
+        if self.has_unsaved_changes:
+            self.unsaved_changes_label.text = "Aktuelle Änderungen nicht gespeichert!"
+            self.unsaved_changes_label.style("color: orange")
+        else:
+            self.unsaved_changes_label.text = "Keine Änderungen"
+            self.unsaved_changes_label.style("color: gray")
+
     def show_view(self, name: str) -> None:
         for k, view in self._views.items():
             if k == name:
@@ -760,6 +777,8 @@ class LeftDockApp:
             ui.notify(log_entry, color="positive")
 
         self.change_log.append(log_entry)
+        self.has_unsaved_changes = True
+        self._update_unsaved_changes_label()
 
         # Refresh schedule
         try:
@@ -1174,6 +1193,8 @@ class LeftDockApp:
 
                             # Clear log after confirmed save
                             self.change_log.clear()
+                            self.has_unsaved_changes = False
+                            self._update_unsaved_changes_label()
                         except Exception as exc:
                             print(f"Error occurred while saving: {exc}")
                             ui.notify(
