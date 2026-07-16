@@ -226,14 +226,14 @@ def dusche_time(slot, block_ID):
 
 def flache_map(block_ID):
     id = ord(block_ID[-1]) - 65
-    map = ["4a", "4b", "5", "6a", "6b", "7a", "7b", "7c", "8a", "8b+8c"]
+    map = ["4a", "4b", "5", "6a", "6b", "7a", "7b", "8a", "8b+8c", "7c"]
     return "ON-08 " + map[id]
 
 
 def NA_map(block_ID):
     id = ord(block_ID[-1]) - 65
     print(block_ID)
-    map = ["4a", "4b", "4c", "5", "8a", "8b", "8c", "8d", "NA 1", "NA 3"]
+    map = ["4a", "4b", "NA 2", "5", "8a", "8b", "8c", "8d", "NA 1", "NA 3"]
     return "ON-05 " + map[id]
 
 
